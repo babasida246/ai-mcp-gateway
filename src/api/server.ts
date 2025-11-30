@@ -3,10 +3,11 @@ import { env } from '../config/env.js';
 import { logger } from '../logging/logger.js';
 import { metrics } from '../logging/metrics.js';
 import { contextManager } from '../context/manager.js';
-import { routeRequest } from '../routing/router.js';
+import { routeRequest, detectComplexity } from '../routing/router.js';
 import { db } from '../db/postgres.js';
 import { redisCache } from '../cache/redis.js';
 import { providerHealth } from '../config/provider-health.js';
+import type { TaskType } from '../mcp/types.js';
 
 /**
  * HTTP API Server for stateless request handling
@@ -16,11 +17,12 @@ import { Server } from 'http';
 export class APIServer {
     private app: express.Application;
     private server: Server | null = null;
+    private routesReady: Promise<void>;
 
     constructor() {
         this.app = express();
         this.setupMiddleware();
-        this.setupRoutes();
+        this.routesReady = this.setupRoutes();
     }
 
     /**
@@ -64,14 +66,68 @@ export class APIServer {
     /**
      * Setup API routes
      */
-    private setupRoutes() {
+    private async setupRoutes() {
+        // Import and mount admin routes
+        const { default: adminRoutes } = await import('./admin.js');
+        this.app.use('/admin', adminRoutes);
+
         // Health check
-        this.app.get('/health', (_req, res) => {
+        this.app.get('/health', async (_req, res) => {
+            // Get provider health status
+            const providers = await providerHealth.getHealthyProviders();
+            const providerStatus = providerHealth.getProviderStatusSummary();
+
+            // Import models config
+            const { getModelsByLayer, LAYERS_IN_ORDER } = await import('../config/models.js');
+
+            // Build layers status
+            const layersStatus: Record<string, {
+                enabled: boolean;
+                models: string[];
+                providers: string[];
+            }> = {};
+
+            for (const layer of LAYERS_IN_ORDER) {
+                const models = getModelsByLayer(layer);
+                const layerProviders = new Set(models.map(m => m.provider));
+                const healthyProviders = Array.from(layerProviders).filter(p => providers.includes(p));
+
+                layersStatus[layer] = {
+                    enabled: models.length > 0 && healthyProviders.length > 0,
+                    models: models.map(m => m.id),
+                    providers: healthyProviders,
+                };
+            }
+
             res.json({
                 status: 'ok',
                 redis: redisCache.isReady(),
                 database: db.isReady(),
                 timestamp: new Date().toISOString(),
+                providers: providerStatus,
+                layers: layersStatus,
+                healthyProviders: providers,
+                configuration: {
+                    logLevel: env.LOG_LEVEL,
+                    defaultLayer: env.DEFAULT_LAYER,
+                    enableCrossCheck: env.ENABLE_CROSS_CHECK,
+                    enableAutoEscalate: env.ENABLE_AUTO_ESCALATE,
+                    maxEscalationLayer: env.MAX_ESCALATION_LAYER,
+                    enableCostTracking: env.ENABLE_COST_TRACKING,
+                    costAlertThreshold: env.COST_ALERT_THRESHOLD,
+                    layerControl: {
+                        L0: env.LAYER_L0_ENABLED,
+                        L1: env.LAYER_L1_ENABLED,
+                        L2: env.LAYER_L2_ENABLED,
+                        L3: env.LAYER_L3_ENABLED,
+                    },
+                    taskSpecificModels: {
+                        chat: env.CHAT_MODELS || 'default',
+                        code: env.CODE_MODELS || 'default',
+                        analyze: env.ANALYZE_MODELS || 'default',
+                        createProject: env.CREATE_PROJECT_MODELS || 'default',
+                    },
+                },
             });
         });
 
@@ -821,14 +877,28 @@ export class APIServer {
 
             // Build system prompt based on mode
             let systemPrompt = '';
-            let taskType: 'general' | 'code-review' | 'code-generation' = 'general';
+            let taskType: TaskType = 'general';
             let complexity: 'low' | 'medium' | 'high' = 'medium';
+            let preferredLayer: 'L0' | 'L1' | 'L2' | 'L3' | undefined;
+
+            // Check if user explicitly requested a layer (e.g., "use L0", "with layer L2")
+            const layerMatch = message.match(/(?:use|with|on|at)\s+(?:layer\s+)?(L[0-3])/i);
+            if (layerMatch) {
+                preferredLayer = layerMatch[1].toUpperCase() as 'L0' | 'L1' | 'L2' | 'L3';
+                logger.info('User requested specific layer', {
+                    layer: preferredLayer,
+                    originalMessage: message.substring(0, 50)
+                });
+            }
 
             switch (mode) {
                 case 'chat':
                     systemPrompt = 'You are a helpful AI assistant. Provide clear, concise answers.';
                     taskType = 'general';
-                    complexity = 'medium';
+                    // Only detect complexity if no layer specified
+                    if (!preferredLayer) {
+                        complexity = await detectComplexity(message);
+                    }
                     break;
 
                 case 'code':
@@ -842,7 +912,7 @@ Analyze the provided code and give detailed feedback on:
 
 ${context?.language ? `Language: ${context.language}` : ''}
 ${context?.filename ? `File: ${context.filename}` : ''}`;
-                    taskType = 'code-review';
+                    taskType = 'code';
                     complexity = 'high';
                     break;
 
@@ -865,7 +935,7 @@ Include at least 3 lines of context before and after changes.
 
 ${context?.filename ? `File: ${context.filename}` : ''}
 ${context?.language ? `Language: ${context.language}` : ''}`;
-                    taskType = 'code-generation';
+                    taskType = 'code';
                     complexity = 'high';
                     break;
             }
@@ -886,31 +956,40 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
             }
 
             // Route request through the gateway with system prompt
+            // Use 'normal' quality for chat mode to prefer L0 free models
+            // Use 'high' quality for code/diff modes for better accuracy
+            const quality = mode === 'chat' ? 'normal' : 'high';
+
             const result = await routeRequest(
                 {
                     prompt: fullPrompt,
                     systemPrompt,
                 },
                 {
-                    quality: 'high',
+                    quality,
                     complexity,
                     taskType,
+                    preferredLayer, // Pass preferred layer if user specified
                 }
             );
 
+            // Determine which layer was used (from routing summary or preferred layer)
+            const routingLayerMatch = result.routingSummary?.match(/layer ([A-Z]\d)/);
+            const usedLayer = preferredLayer || (routingLayerMatch ? routingLayerMatch[1] : env.DEFAULT_LAYER);
+
             // Format response based on mode
-            let responseMessage = result.text;
+            let responseMessage = result.content;
             let patch: string | undefined;
 
             if (mode === 'diff') {
                 // Extract diff from code blocks if present
-                const diffMatch = result.text.match(/```diff\n([\s\S]+?)\n```/);
+                const diffMatch = result.content.match(/```diff\n([\s\S]+?)\n```/);
                 if (diffMatch) {
                     patch = diffMatch[1];
                     responseMessage = 'Diff generated successfully';
                 } else {
                     // If no code block, assume entire response is the diff
-                    patch = result.text;
+                    patch = result.content;
                     responseMessage = 'Diff generated successfully';
                 }
             }
@@ -918,13 +997,32 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
             res.json({
                 message: responseMessage,
                 patch,
-                model: result.modelUsed,
+                model: result.modelId,
                 tokens: {
-                    input: result.usage?.promptTokens || 0,
-                    output: result.usage?.completionTokens || 0,
-                    total: result.usage?.totalTokens || 0,
+                    input: result.inputTokens || 0,
+                    output: result.outputTokens || 0,
+                    total: (result.inputTokens || 0) + (result.outputTokens || 0),
                 },
                 cost: result.cost || 0,
+                metadata: {
+                    complexity,
+                    layer: usedLayer,
+                    model: result.modelId,
+                    tokens: {
+                        input: result.inputTokens || 0,
+                        output: result.outputTokens || 0,
+                        total: (result.inputTokens || 0) + (result.outputTokens || 0),
+                    },
+                    cost: result.cost || 0,
+                },
+                escalation: result.requiresEscalationConfirm ? {
+                    required: true,
+                    currentLayer: usedLayer,
+                    suggestedLayer: result.suggestedLayer,
+                    reason: result.escalationReason,
+                    message: '⚠️ The current layer detected conflicts. A higher tier (paid) layer is suggested for better results. Would you like to escalate?',
+                    optimizedPrompt: result.optimizedPrompt,
+                } : undefined,
             });
 
         } catch (error) {
@@ -946,6 +1044,9 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
         const port = parseInt(env.API_PORT);
         const host = env.API_HOST;
 
+        // Wait for routes to be set up
+        await this.routesReady;
+
         // Check LLM provider connectivity using provider health manager
         await providerHealth.refreshAllProviders();
 
@@ -958,6 +1059,7 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
                 port,
                 endpoints: [
                     'GET /health',
+                    'GET /admin/*',
                     'POST /v1/route',
                     'POST /v1/code-agent',
                     'POST /v1/chat',

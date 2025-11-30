@@ -20,6 +20,8 @@ import chalk from 'chalk';
 import { chatCommand } from './commands/chat.js';
 import { codeCommand } from './commands/code.js';
 import { diffCommand } from './commands/diff.js';
+import { analyzeCommand } from './commands/analyze.js';
+import { createProjectCommand } from './commands/create-project.js';
 
 const program = new Command();
 
@@ -50,9 +52,13 @@ program
 // Code command
 program
     .command('code <file>')
-    .description('Send code file for AI analysis/review')
+    .description('Send code file for AI analysis/review or create new code (GitHub Copilot-style)')
     .option('-p, --prompt <text>', 'Custom prompt for AI')
     .option('--stdin', 'Read from stdin instead of file')
+    .option('--no-context', 'Disable context analysis (faster but less accurate)')
+    .option('--no-related', 'Skip related files analysis')
+    .option('-c, --create', 'Create new code instead of analyzing existing file')
+    .option('-o, --output <file>', 'Output file for generated code')
     .action(async (file: string, options: any) => {
         const globalOpts = program.opts();
         await codeCommand(file, {
@@ -60,6 +66,10 @@ program
             endpoint: globalOpts.endpoint,
             apiKey: globalOpts.apiKey,
             stdin: options.stdin,
+            context: options.context,
+            related: options.related,
+            create: options.create,
+            output: options.output,
         });
     });
 
@@ -76,6 +86,52 @@ program
             endpoint: globalOpts.endpoint,
             apiKey: globalOpts.apiKey,
             apply: options.apply,
+        });
+    });
+
+// Analyze command - Multi-file analysis
+program
+    .command('analyze <pattern>')
+    .description('Analyze multiple files (e.g., "src/**/*.ts")')
+    .option('-p, --prompt <text>', 'Custom analysis prompt')
+    .option('-m, --max-files <number>', 'Maximum files to analyze (default: 10)', '10')
+    .option('-r, --recursive', 'Include subdirectories')
+    .action(async (pattern: string, options: any) => {
+        const globalOpts = program.opts();
+        await analyzeCommand(pattern, {
+            prompt: options.prompt,
+            endpoint: globalOpts.endpoint,
+            apiKey: globalOpts.apiKey,
+            maxFiles: parseInt(options.maxFiles),
+            recursive: options.recursive,
+        });
+    });
+
+// Create Project command - AI-powered project scaffolding
+program
+    .command('create-project <description>')
+    .description('Create a complete project with AI (auto-structure, tests, CI/CD)')
+    .option('-o, --output <dir>', 'Output directory (default: auto-generated name)')
+    .option('--no-install', 'Skip npm install')
+    .option('--no-test', 'Skip initial test run')
+    .option('-v, --verbose', 'Verbose output')
+    .option('-b, --budget <amount>', 'Budget for AI generation (USD)', parseFloat)
+    .option('-l, --max-layer <layer>', 'Maximum layer to use (L0/L1/L2/L3)')
+    .option('--enable-test', 'Enable testing during generation')
+    .option('--enable-debug', 'Enable debug mode')
+    .action(async (description: string, options: any) => {
+        const globalOpts = program.opts();
+        await createProjectCommand(description, {
+            endpoint: globalOpts.endpoint,
+            apiKey: globalOpts.apiKey,
+            output: options.output,
+            noInstall: options.noInstall,
+            noTest: options.noTest,
+            verbose: options.verbose,
+            budget: options.budget,
+            maxLayer: options.maxLayer,
+            enableTest: options.enableTest,
+            enableDebug: options.enableDebug,
         });
     });
 
@@ -124,6 +180,12 @@ function printDetailedHelp(): void {
     console.log(chalk.dim('    Send file for code review or analysis.'));
     console.log(chalk.dim('    Use "-" as filename to read from stdin.\n'));
 
+    console.log(chalk.white('  mcp analyze <pattern> [-m max]'));
+    console.log(chalk.dim('    Analyze multiple files matching a pattern.\n'));
+
+    console.log(chalk.white('  mcp create-project <description>'));
+    console.log(chalk.dim('    Create complete project with AI (structure, tests, CI/CD).\n'));
+
     console.log(chalk.white('  mcp diff <file> [-p "prompt"]'));
     console.log(chalk.dim('    Request AI to generate unified diff patch.\n'));
 
@@ -145,6 +207,12 @@ function printDetailedHelp(): void {
 
     console.log(chalk.green('  # Code review'));
     console.log(chalk.dim('  $ mcp code src/index.ts -p "find bugs and suggest improvements"\n'));
+
+    console.log(chalk.green('  # Analyze multiple files'));
+    console.log(chalk.dim('  $ mcp analyze "src/**/*.ts" -m 5\n'));
+
+    console.log(chalk.green('  # Create a new project'));
+    console.log(chalk.dim('  $ mcp create-project "React dashboard with authentication"\n'));
 
     console.log(chalk.green('  # Analyze from stdin'));
     console.log(chalk.dim('  $ cat myfile.js | mcp code -\n'));

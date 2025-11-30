@@ -70,6 +70,30 @@ const envSchema = z.object({
         .default('true'),
     MAX_ESCALATION_LAYER: z.string().default('L2'),
 
+    // Layer Enable/Disable Control
+    LAYER_L0_ENABLED: z
+        .string()
+        .transform((val: string) => val === 'true')
+        .default('true'),
+    LAYER_L1_ENABLED: z
+        .string()
+        .transform((val: string) => val === 'true')
+        .default('true'),
+    LAYER_L2_ENABLED: z
+        .string()
+        .transform((val: string) => val === 'true')
+        .default('true'),
+    LAYER_L3_ENABLED: z
+        .string()
+        .transform((val: string) => val === 'true')
+        .default('true'),
+
+    // Task-specific model preferences
+    CHAT_MODELS: z.string().optional(),
+    CODE_MODELS: z.string().optional(),
+    ANALYZE_MODELS: z.string().optional(),
+    CREATE_PROJECT_MODELS: z.string().optional(),
+
     // Cost Tracking
     ENABLE_COST_TRACKING: z
         .string()

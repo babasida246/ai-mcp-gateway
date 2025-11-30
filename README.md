@@ -1,8 +1,8 @@
 # AI MCP Gateway
 
-**Cost-Optimized Multi-Model Orchestrator with Stateless Architecture**
+**Intelligent Multi-Model Orchestrator with Cost Optimization & Dynamic Routing**
 
-An intelligent Model Context Protocol (MCP) server and HTTP API that orchestrates multiple AI models (free and paid) with dynamic N-layer routing, cross-checking, cost optimization, and stateless context management via Redis + PostgreSQL.
+A production-ready Model Context Protocol (MCP) server and HTTP API Gateway that orchestrates multiple AI models with intelligent N-layer routing, budget tracking, task-specific model selection, and automatic fallback to free models.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
@@ -11,27 +11,32 @@ An intelligent Model Context Protocol (MCP) server and HTTP API that orchestrate
 
 ---
 
-## ✨ Features
+## ✨ Key Features
 
-### Core Features
-- 🎯 **Smart Routing**: Dynamic N-layer routing based on task complexity and quality requirements
-- 💰 **Cost Optimization**: Prioritizes free/cheap models, escalates only when necessary
-- ✅ **Cross-Checking**: Multiple models review each other's work for higher quality
-- 🔧 **Code Agent**: Specialized AI agent for coding tasks with TODO-driven workflow
-- 🧪 **Test Integration**: Built-in Vitest and Playwright test runners
-- 📊 **Metrics & Logging**: Track costs, tokens, and performance
-- 🔄 **Self-Improvement**: Documents patterns, bugs, and routing heuristics
-- 🛠️ **Extensible**: Easy to add new models, providers, and tools
+### 🎯 Intelligent Routing
+- **Dynamic N-Layer Routing**: Automatically routes requests to appropriate model tier (L0-L3) based on complexity
+- **Task-Specific Models**: Dedicated model configurations for chat, code, analysis, and project creation
+- **Escalation Control**: Manual confirmation required for paid model escalation (configurable)
+- **OpenRouter Fallback**: Automatically fetches top-ranked free models when L0 is unconfigured
 
-### NEW: Stateless Architecture ✨
-- 🌐 **HTTP API Gateway**: RESTful API for multi-client access (CLI, Telegram, Web UI, CI/CD)
-- 🗄️ **Redis Cache Layer**: Hot storage for LLM responses, context summaries, routing hints (with TTL)
-- 💾 **PostgreSQL Database**: Cold storage for conversations, messages, LLM call logs, analytics
-- 📦 **Context Management**: Two-tier context with hot (Redis) + cold (DB) layers
-- 🔗 **Handoff Builder**: Optimized inter-layer communication for model escalation
-- 📝 **TODO Integration**: Persistent TODO lists with full CRUD via Redis/DB
-- 📊 **Stats & Analytics**: `/v1/stats` endpoints for cost tracking and usage analytics
-- 🎭 **Multi-Client Support**: Single gateway serves CLI, Telegram bots, Web UIs, automation tools
+### 💰 Cost Optimization
+- **Budget Tracking**: Set per-project budgets with automatic enforcement
+- **Free-First Strategy**: Prioritizes free models (L0), escalates only when necessary
+- **Cost Monitoring**: Real-time cost tracking and alerts via `/health` endpoint
+- **Layer Limits**: Configure maximum escalation tier per project
+
+### 🔧 Advanced Capabilities
+- **Cross-Checking**: Multiple models validate each other's outputs for critical tasks
+- **Provider Health Monitoring**: Automatic failover when providers are unavailable
+- **Context Management**: Redis + PostgreSQL for efficient state management
+- **Code Agent**: Specialized AI for coding with TODO-driven workflow
+- **Test Integration**: Built-in Vitest and Playwright test runners
+
+### 🌐 Multi-Client Architecture
+- **HTTP API Gateway**: RESTful endpoints for any client (CLI, Web, Telegram, CI/CD)
+- **MCP Server Mode**: Native support for MCP clients (Claude Desktop, VSCode)
+- **CLI Tool**: Powerful command-line interface with project scaffolding
+- **Docker Ready**: Full containerization with docker-compose
 
 ---
 
@@ -39,15 +44,12 @@ An intelligent Model Context Protocol (MCP) server and HTTP API that orchestrate
 
 - [Quick Start](#quick-start)
 - [CLI Tool](#cli-tool)
-- [Architecture](#architecture)
-- [Dual Mode Operation](#dual-mode-operation)
 - [Configuration](#configuration)
-- [HTTP API Usage](#http-api-usage)
-- [Available Tools](#available-tools)
+- [HTTP API](#http-api)
 - [Model Layers](#model-layers)
-- [Context Management](#context-management)
+- [Architecture](#architecture)
 - [Development](#development)
-- [Testing](#testing)
+- [Documentation](#documentation)
 - [Contributing](#contributing)
 
 📚 **[Complete Documentation Index](docs/DOCUMENTATION-INDEX.md)** - Navigate all guides and references
@@ -718,84 +720,112 @@ CREATE TABLE todo_lists (
 
 ### Environment Variables
 
-Create a `.env` file (use `.env.example` as template):
+Create a `.env.docker` file (use `.env.docker.example` as template):
 
 ```bash
-# MCP Server
-MCP_SERVER_NAME=ai-mcp-gateway
-MCP_SERVER_VERSION=0.1.0
+# ============================================
+# LLM Provider API Keys
+# ============================================
+# REQUIRED: At least one provider API key
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+# OPENAI_API_KEY=your_openai_api_key_here
+# ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
-# API Keys
-OPENROUTER_API_KEY=sk-or-v1-...
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
+# ============================================
+# OpenRouter Configuration
+# ============================================
+OPENROUTER_FALLBACK_MODELS=qwen/qwen3-coder:free,x-ai/grok-4.1-fast:free
+OPENROUTER_REPLACE_OPENAI=openai/gpt-4o-mini
+OPENROUTER_REPLACE_CLAUDE=anthropic/claude-3.5-sonnet
 
-# OSS/Local Models (optional)
-OSS_MODEL_ENDPOINT=http://localhost:11434
+# ============================================
+# Task-Specific Models (NEW!)
+# ============================================
+# Comma-separated list of preferred models for each task type
+CHAT_MODELS=meta-llama/llama-3.3-70b-instruct:free,google/gemini-flash-1.5
+CODE_MODELS=qwen/qwen-2.5-coder-32b-instruct:free,deepseek/deepseek-coder-33b-instruct:free
+ANALYZE_MODELS=qwen/qwen-2.5-72b-instruct:free,google/gemini-flash-1.5
+CREATE_PROJECT_MODELS=qwen/qwen-2.5-coder-32b-instruct:free,deepseek/deepseek-coder-33b-instruct:free
+
+# ============================================
+# OSS/Local Model (Ollama)
+# ============================================
 OSS_MODEL_ENABLED=false
+OSS_MODEL_ENDPOINT=http://ollama:11434
+OSS_MODEL_NAME=llama3:8b
 
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
+# ============================================
+# Database (PostgreSQL)
+# ============================================
+POSTGRES_DB=ai_mcp_gateway
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_secure_postgres_password_here
+
+# ============================================
+# Redis Cache
+# ============================================
 REDIS_PASSWORD=
-REDIS_DB=0
 
-# PostgreSQL
-DATABASE_URL=postgresql://user:pass@localhost:5432/ai_mcp_gateway
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=ai_mcp_gateway
-DB_USER=postgres
-DB_PASSWORD=
-DB_SSL=false
-
-# HTTP API
-API_PORT=3000
-API_HOST=0.0.0.0
-API_CORS_ORIGIN=*
-
-# Logging
+# ============================================
+# Application Configuration
+# ============================================
 LOG_LEVEL=info
-LOG_FILE=logs/ai-mcp-gateway.log
-
-# Routing Configuration
 DEFAULT_LAYER=L0
 ENABLE_CROSS_CHECK=true
-ENABLE_AUTO_ESCALATE=true
+ENABLE_AUTO_ESCALATE=false  # Set to false to require manual confirmation
 MAX_ESCALATION_LAYER=L2
-
-# Cost Tracking
 ENABLE_COST_TRACKING=true
 COST_ALERT_THRESHOLD=1.00
-
-# Mode
-MODE=mcp  # or 'api' for HTTP server
 ```
 
-### Model Configuration
+### Model Layers
 
-Edit `src/config/models.ts` to:
+The gateway organizes models into 4 tiers:
 
-- Add/remove models
-- Adjust layer assignments
-- Update pricing
-- Enable/disable models
+| Layer | Cost | Use Case | Examples |
+|-------|------|----------|----------|
+| **L0** | Free | Simple tasks, drafts, complexity detection | Llama 3.3 70B, Qwen 2.5 Coder, DeepSeek Coder (all free) |
+| **L1** | Cheap | Standard coding, chat, reviews | GPT-4o-mini, Claude Haiku |
+| **L2** | Mid | Complex logic, architecture, debugging | GPT-4o, Claude Sonnet |
+| **L3** | Premium | Critical systems, production code | o1-preview, Claude Opus |
 
-Example:
+### Key Features
 
-```typescript
-{
-  id: 'my-custom-model',
-  provider: 'openrouter',
-  apiModelName: 'provider/model-name',
-  layer: 'L1',
-  relativeCost: 5,
-  pricePer1kInputTokens: 0.001,
-  pricePer1kOutputTokens: 0.002,
-  capabilities: {
-    code: true,
-    general: true,
-    reasoning: true,
+#### 1. **Task-Specific Models** (NEW!)
+Define preferred models for different task types:
+- `CHAT_MODELS`: General conversation and questions
+- `CODE_MODELS`: Code generation and refactoring
+- `ANALYZE_MODELS`: Code analysis and debugging
+- `CREATE_PROJECT_MODELS`: Project scaffolding
+
+The router automatically selects the best model from your preferred list based on the task type.
+
+#### 2. **OpenRouter Fallback** (NEW!)
+When L0 has no configured models, the system automatically:
+- Fetches available free models from OpenRouter API
+- Ranks them by context window size and capabilities
+- Uses top 5 for routing
+- Logs the fallback operation
+
+#### 3. **Escalation Control** (NEW!)
+When `ENABLE_AUTO_ESCALATE=false`:
+- System detects when a higher tier is needed
+- Prompts user for confirmation before using paid models
+- Shows reason for escalation
+- Allows manual approval/rejection
+
+#### 4. **Budget Tracking** (CLI Feature)
+When creating projects via CLI:
+```bash
+mcp create-project "Todo app with React"
+# Prompts for:
+# - Budget (USD): 0.50
+# - Max layer: L1
+# - Enable tests: yes
+# - Debug mode: no
+```
+
+The CLI tracks cumulative costs and stops generation if budget is exceeded.
   },
   contextWindow: 100000,
   enabled: true,

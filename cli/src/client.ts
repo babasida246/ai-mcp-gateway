@@ -24,9 +24,19 @@ export interface MCPRequest {
 export interface MCPResponse {
     message: string;
     patch?: string;
+    cost?: number;
     metadata?: {
         tokens: number;
         model: string;
+        cost?: number;
+    };
+    escalation?: {
+        required: boolean;
+        currentLayer: string;
+        suggestedLayer: string;
+        reason: string;
+        message: string;
+        optimizedPrompt?: string;
     };
 }
 

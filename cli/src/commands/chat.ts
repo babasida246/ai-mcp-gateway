@@ -5,6 +5,7 @@
 import chalk from 'chalk';
 import * as readline from 'readline';
 import { MCPClient } from '../client.js';
+import { displayEscalation } from '../utils/escalation.js';
 
 export async function chatCommand(
     message: string | undefined,
@@ -117,10 +118,25 @@ async function interactiveMode(client: MCPClient): Promise<void> {
  */
 function printResponse(response: any): void {
     console.log(chalk.cyan('─'.repeat(50)));
-    console.log(chalk.white(response.message || response));
+    console.log(chalk.white(response.message || JSON.stringify(response, null, 2)));
     console.log(chalk.cyan('─'.repeat(50)));
 
-    if (response.model) {
+    // Display escalation warning if present
+    if (response.escalation?.required) {
+        displayEscalation(response.escalation);
+    }
+
+    // Display metadata
+    if (response.metadata) {
+        const meta = response.metadata;
+        const complexity = meta.complexity || 'unknown';
+        const layer = meta.layer || 'unknown';
+        const model = meta.model || response.model || 'unknown';
+        const tokens = meta.tokens?.total || response.tokens?.total || 0;
+        const cost = meta.cost || response.cost;
+
+        console.log(chalk.dim(`\n📊 Complexity: ${complexity} | Layer: ${layer} | Model: ${model} | Tokens: ${tokens}${cost ? ` | Cost: $${cost.toFixed(4)}` : ''}\n`));
+    } else if (response.model) {
         const tokens = response.tokens?.total || 0;
         const cost = response.cost ? `$${response.cost.toFixed(4)}` : '';
         console.log(chalk.dim(`\n📊 Model: ${response.model} | Tokens: ${tokens} ${cost ? `| Cost: ${cost}` : ''}\n`));

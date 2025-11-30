@@ -1,17 +1,21 @@
 # MCP CLI - AI Gateway Command Line Tool
 
-A powerful command-line interface for interacting with the MCP Gateway, inspired by Claude CLI.
+A powerful command-line interface for the MCP Gateway with AI-powered project scaffolding, code analysis, and interactive chat.
 
-## Features
+## ✨ Features
 
-- 🤖 **Interactive Chat** - Chat with AI models in real-time
-- 📝 **Code Analysis** - Get expert code reviews and suggestions
+- 🤖 **Interactive Chat** - Real-time AI conversation with context awareness
+- 📝 **Code Analysis** - Expert code reviews and suggestions
 - 🔧 **Diff Generation** - Generate unified diff patches for code changes
-- 🎨 **Syntax Highlighting** - Colored output for better readability
-- 🔌 **Pipe Support** - Works seamlessly with Unix pipes
-- 📊 **Context Aware** - Automatically includes git status and file context
+- 🚀 **Project Creation** - AI-powered project scaffolding with budget tracking
+- 🎨 **Syntax Highlighting** - Colored terminal output for better readability
+- 🔌 **Pipe Support** - Seamless integration with Unix pipes
+- 📊 **Context Aware** - Includes git status, file listings, and workspace context
+- 💰 **Budget Tracking** - Set per-project budgets and enforce cost limits
+- 🎯 **Layer Control** - Choose maximum model tier to control costs
+- ⚠️ **Escalation Alerts** - Manual confirmation for paid model usage
 
-## Installation
+## 🚀 Installation
 
 ### From Source
 
@@ -113,6 +117,65 @@ Or using git apply:
 ```bash
 mcp diff src/app.ts "Refactor to async/await" > changes.patch
 git apply changes.patch
+```
+
+### Create Project Command (NEW!)
+
+AI-powered project scaffolding with interactive configuration:
+
+```bash
+mcp create-project "Todo app with React and TypeScript"
+```
+
+**Interactive Prompts:**
+```
+Project description: Todo app with React and TypeScript
+Budget (USD, 0 for no limit): 0.50
+Maximum layer (L0/L1/L2/L3): L1
+Enable testing? (y/n): y
+Enable debug mode? (y/n): n
+
+Analyzing project requirements...
+Creating project plan...
+
+Files to generate:
+  - package.json
+  - tsconfig.json
+  - src/App.tsx
+  - src/components/TodoList.tsx
+  - src/types.ts
+  - src/tests/App.test.tsx
+  
+[1/6] Generating package.json...
+  Cost: $0.0012 | Total: $0.0012
+[2/6] Generating tsconfig.json...
+  Cost: $0.0008 | Total: $0.0020
+...
+✓ Generated 6 files
+💰 Total cost: $0.0450
+```
+
+**Features:**
+- **Budget Tracking**: Set a budget limit (e.g., $0.50) and generation stops if exceeded
+- **Layer Control**: Choose maximum model tier (L0=free, L1=cheap, L2=mid, L3=premium)
+- **Test Generation**: Optionally include test files
+- **Debug Mode**: Verbose logging for troubleshooting
+- **Cost Display**: Shows per-file and cumulative costs
+
+**Examples:**
+```bash
+# Free models only (L0)
+mcp create-project "Simple Express API"
+# Budget: 0
+# Max layer: L0
+
+# With budget limit
+mcp create-project "Full-stack Next.js app"
+# Budget: 1.00
+# Max layer: L2
+
+# Quick mode (no prompts, use defaults)
+mcp create-project "CLI tool" --budget 0 --max-layer L0 --no-tests
 ```
 
 ## Examples

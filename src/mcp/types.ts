@@ -56,6 +56,10 @@ export interface LLMResponse {
     outputTokens: number;
     cost: number;
     routingSummary: string;
+    requiresEscalationConfirm?: boolean;
+    suggestedLayer?: ModelLayer;
+    escalationReason?: string;
+    optimizedPrompt?: string; // Optimized prompt for next layer
 }
 
 /**

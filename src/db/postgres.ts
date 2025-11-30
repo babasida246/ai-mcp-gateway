@@ -6,7 +6,7 @@ import { logger } from '../logging/logger.js';
  * Database client singleton for PostgreSQL
  */
 class Database {
-    private pool: Pool | null = null;
+    private _pool: Pool | null = null;
     private isConnected = false;
 
     constructor() {
@@ -15,6 +15,15 @@ class Database {
 
     private initialize() {
         try {
+            // Skip database initialization if DATABASE_URL not provided and essential configs missing
+            const hasExplicitConfig = process.env.DATABASE_URL ||
+                (process.env.DB_HOST && process.env.DB_NAME && process.env.DB_USER);
+
+            if (!hasExplicitConfig) {
+                logger.info('Database not configured (no DATABASE_URL or DB_* vars), running without database');
+                return;
+            }
+
             const config = env.DATABASE_URL
                 ? { connectionString: env.DATABASE_URL }
                 : {
@@ -22,23 +31,23 @@ class Database {
                     port: parseInt(env.DB_PORT),
                     database: env.DB_NAME,
                     user: env.DB_USER,
-                    password: env.DB_PASSWORD,
+                    password: env.DB_PASSWORD || undefined,
                     ssl: env.DB_SSL ? { rejectUnauthorized: false } : false,
                 };
 
-            this.pool = new Pool({
+            this._pool = new Pool({
                 ...config,
                 max: 20,
                 idleTimeoutMillis: 30000,
                 connectionTimeoutMillis: 2000,
             });
 
-            this.pool.on('connect', () => {
+            this._pool.on('connect', () => {
                 this.isConnected = true;
                 logger.info('Database connected successfully');
             });
 
-            this.pool.on('error', (error) => {
+            this._pool.on('error', (error: Error) => {
                 this.isConnected = false;
                 logger.error('Database connection error', {
                     error: error.message,
@@ -55,14 +64,17 @@ class Database {
     }
 
     private async testConnection() {
+        if (!this._pool) {
+            logger.info('Database not configured, skipping connection test');
+            return;
+        }
+
         try {
-            const client = await this.pool?.connect();
-            if (client) {
-                await client.query('SELECT NOW()');
-                client.release();
-                this.isConnected = true;
-                logger.info('Database connection test successful');
-            }
+            const client = await this._pool.connect();
+            await client.query('SELECT NOW()');
+            client.release();
+            this.isConnected = true;
+            logger.info('Database connection test successful');
         } catch (error) {
             this.isConnected = false;
             logger.warn('Database connection test failed', {
@@ -78,13 +90,13 @@ class Database {
         sql: string,
         params?: unknown[]
     ): Promise<QueryResult<T> | null> {
-        if (!this.pool || !this.isConnected) {
+        if (!this._pool || !this.isConnected) {
             logger.debug('Database not available for query');
             return null;
         }
 
         try {
-            const result = await this.pool.query<T>(sql, params);
+            const result = await this._pool.query<T>(sql, params);
             return result;
         } catch (error) {
             logger.error('Database query error', {
@@ -158,7 +170,7 @@ class Database {
      * Initialize database schema
      */
     async initSchema(): Promise<void> {
-        if (!this.pool || !this.isConnected) {
+        if (!this._pool || !this.isConnected) {
             logger.warn('Database not available for schema initialization');
             return;
         }
@@ -256,6 +268,9 @@ class Database {
                 `CREATE INDEX IF NOT EXISTS idx_llm_calls_created ON llm_calls(created_at)`
             );
 
+            // Initialize settings tables
+            await this.initializeSettingsTables();
+
             logger.info('Database schema initialized successfully');
         } catch (error) {
             logger.error('Failed to initialize database schema', {
@@ -265,11 +280,29 @@ class Database {
     }
 
     /**
+     * Initialize settings tables for persistent configuration
+     */
+    private async initializeSettingsTables(): Promise<void> {
+        if (!this._pool) return;
+
+        try {
+            const { SettingsService } = await import('./settings-service.js');
+            const settingsService = new SettingsService(this);
+            await settingsService.initializeSettingsTables();
+            logger.info('Settings tables initialized successfully');
+        } catch (error) {
+            logger.error('Failed to initialize settings tables', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+        }
+    }
+
+    /**
      * Close database connection
      */
     async close(): Promise<void> {
-        if (this.pool) {
-            await this.pool.end();
+        if (this._pool) {
+            await this._pool.end();
             this.isConnected = false;
             logger.info('Database connection closed');
         }
@@ -281,7 +314,20 @@ class Database {
     isReady(): boolean {
         return this.isConnected;
     }
+
+    /**
+     * Get the connection pool (for SettingsService)
+     */
+    get pool(): Pool {
+        if (!this._pool) {
+            throw new Error('Database pool not initialized');
+        }
+        return this._pool;
+    }
 }
 
 // Singleton instance
 export const db = new Database();
+
+// Export Database class for typing
+export type PostgresDB = Database;
