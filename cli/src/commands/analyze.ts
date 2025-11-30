@@ -121,7 +121,7 @@ async function findFiles(
 ): Promise<string[]> {
     try {
         const globPattern = options.recursive ? pattern : pattern.replace('**/', '');
-        
+
         const matches = await glob(globPattern, {
             ignore: [
                 '**/node_modules/**',

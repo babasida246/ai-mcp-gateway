@@ -67,9 +67,9 @@ export class APIServer {
      * Setup API routes
      */
     private async setupRoutes() {
-        // Import and mount admin routes
-        const { default: adminRoutes } = await import('./admin.js');
-        this.app.use('/admin', adminRoutes);
+        // TODO: Import and mount admin routes when admin.ts is implemented
+        // const { default: adminRoutes } = await import('./admin.js');
+        // this.app.use('/admin', adminRoutes);
 
         // Health check
         this.app.get('/health', async (_req, res) => {

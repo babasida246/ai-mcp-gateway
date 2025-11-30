@@ -109,7 +109,7 @@ export async function createProjectCommand(
             // Write file
             const filePath = path.join(outputDir, file.path);
             const fileDir = path.dirname(filePath);
-            
+
             if (!fs.existsSync(fileDir)) {
                 fs.mkdirSync(fileDir, { recursive: true });
             }
@@ -283,7 +283,7 @@ Prioritize files by importance (1=most important).`;
 
         // Parse JSON from response
         const jsonMatch = response.message.match(/```json\n([\s\S]+?)\n```/) ||
-                         response.message.match(/\{[\s\S]+\}/);
+            response.message.match(/\{[\s\S]+\}/);
 
         if (!jsonMatch) {
             console.log(chalk.red('Failed to parse project plan from AI response'));
