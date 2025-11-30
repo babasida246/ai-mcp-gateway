@@ -60,7 +60,7 @@ An intelligent Model Context Protocol (MCP) server and HTTP API that orchestrate
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/yourusername/ai-mcp-gateway.git
+git clone https://github.com/babasida246/ai-mcp-gateway.git
 cd ai-mcp-gateway
 
 # 2. Setup environment
@@ -96,7 +96,7 @@ See **[DOCKER-QUICKSTART.md](DOCKER-QUICKSTART.md)** for details.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/ai-mcp-gateway.git
+git clone https://github.com/babasida246/ai-mcp-gateway.git
 cd ai-mcp-gateway
 
 # Install dependencies
@@ -1138,22 +1138,25 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/ai-mcp-gateway/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/ai-mcp-gateway/discussions)
-- **Documentation**: [Wiki](https://github.com/yourusername/ai-mcp-gateway/wiki)
+- **Issues**: [GitHub Issues](https://github.com/babasida246/ai-mcp-gateway/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/babasida246/ai-mcp-gateway/discussions)
+- **Documentation**: See comprehensive guides in this repository
 
 ---
 
 ## 🗺️ Roadmap
 
+- [x] ✅ Redis caching layer (implemented)
+- [x] ✅ PostgreSQL persistence (implemented)
+- [x] ✅ HTTP API mode (implemented)
+- [x] ✅ CLI tool (implemented)
+- [x] ✅ Docker deployment (implemented)
 - [ ] Token usage analytics dashboard
-- [ ] Caching layer for repeated queries
 - [ ] More LLM providers (Google AI, Cohere, etc.)
 - [ ] Streaming response support
 - [ ] Web UI for configuration and monitoring
-- [ ] Batch processing optimizations
 - [ ] Advanced prompt templates
-- [ ] A/B testing framework
+- [ ] A/B testing framework for routing strategies
 
 ---
 
