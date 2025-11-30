@@ -4,7 +4,7 @@ This document provides an overview of all documentation files in the AI MCP Gate
 
 ## 📚 Core Documentation
 
-### [README.md](./README.md)
+### [README.md](../README.md)
 **Main project documentation** - Start here!
 - Quick start guides (Docker & Local)
 - Architecture overview
@@ -107,20 +107,20 @@ This document provides an overview of all documentation files in the AI MCP Gate
 
 ## 🛠️ CLI Tool
 
-### [cli/README.md](./cli/README.md)
+### [cli/README.md](../cli/README.md)
 **CLI tool main documentation**
 - Installation
 - Commands (chat, code, diff)
 - Configuration
 - Examples
 
-### [cli/QUICKSTART.md](./cli/QUICKSTART.md)
+### [cli/QUICKSTART.md](../cli/QUICKSTART.md)
 **CLI quick start**
 - 5-minute setup
 - Basic usage
 - Common workflows
 
-### [cli/IMPLEMENTATION.md](./cli/IMPLEMENTATION.md)
+### [cli/IMPLEMENTATION.md](../cli/IMPLEMENTATION.md)
 **CLI technical details**
 - Architecture
 - HTTP client
@@ -128,26 +128,26 @@ This document provides an overview of all documentation files in the AI MCP Gate
 
 ## 📖 Reference Documents
 
-### [docs/API-GUIDE.md](./docs/API-GUIDE.md)
+### [API-GUIDE.md](./API-GUIDE.md)
 **Complete HTTP API reference**
 - All endpoints documented
 - Request/response schemas
 - Authentication
 - Error codes
 
-### [docs/ai-common-bugs-and-fixes.md](./docs/ai-common-bugs-and-fixes.md)
+### [ai-common-bugs-and-fixes.md](./ai-common-bugs-and-fixes.md)
 **Bug tracking**
 - Known issues
 - Root causes
 - Fixes and workarounds
 
-### [docs/ai-orchestrator-notes.md](./docs/ai-orchestrator-notes.md)
+### [ai-orchestrator-notes.md](./ai-orchestrator-notes.md)
 **Orchestration patterns**
 - Successful patterns
 - Best practices
 - Lessons learned
 
-### [docs/ai-routing-heuristics.md](./docs/ai-routing-heuristics.md)
+### [ai-routing-heuristics.md](./ai-routing-heuristics.md)
 **Routing rules**
 - When to escalate
 - Model capabilities
@@ -158,37 +158,39 @@ This document provides an overview of all documentation files in the AI MCP Gate
 ```
 ai-mcp-gateway/
 ├── README.md                          # Start here
-├── QUICK-REFERENCE.md                 # Cheat sheet
-├── ARCHITECTURE.md                    # System design
+├── docs/
+│   ├── QUICK-REFERENCE.md             # Cheat sheet
+│   ├── ARCHITECTURE.md                # System design
+│   │
+│   ├── Getting Started/
+│   │   ├── DOCKER-QUICKSTART.md      # Fastest start
+│   │   └── DOCKER-DEPLOYMENT.md      # Production deploy
+│   │
+│   ├── Features/
+│   │   ├── PROVIDER-FALLBACK-GUIDE.md # Provider fallback
+│   │   ├── SERVER-STATS-GUIDE.md      # Monitoring
+│   │   └── SELF-IMPROVEMENT.md        # Self-learning
+│   │
+│   ├── Development/
+│   │   ├── TESTING.md                 # Testing guide
+│   │   ├── IMPLEMENTATION-SUMMARY.md  # Recent changes
+│   │   ├── IMPROVEMENTS-SUMMARY.md    # All improvements
+│   │   └── IMPROVEMENTS.md            # Detailed notes
+│   │
+│   ├── CLI/
+│   │   └── CLI-DEVELOPMENT-COMPLETE.md # CLI summary
+│   │
+│   └── Reference/
+│       ├── DOCUMENTATION-INDEX.md     # This file
+│       ├── API-GUIDE.md               # API reference
+│       ├── ai-common-bugs-and-fixes.md
+│       ├── ai-orchestrator-notes.md
+│       └── ai-routing-heuristics.md
 │
-├── Getting Started/
-│   ├── DOCKER-QUICKSTART.md          # Fastest start
-│   └── DOCKER-DEPLOYMENT.md          # Production deploy
-│
-├── Features/
-│   ├── PROVIDER-FALLBACK-GUIDE.md    # Provider fallback
-│   ├── SERVER-STATS-GUIDE.md         # Monitoring
-│   └── SELF-IMPROVEMENT.md           # Self-learning
-│
-├── Development/
-│   ├── TESTING.md                    # Testing guide
-│   ├── IMPLEMENTATION-SUMMARY.md     # Recent changes
-│   ├── IMPROVEMENTS-SUMMARY.md       # All improvements
-│   └── IMPROVEMENTS.md               # Detailed notes
-│
-├── CLI/
-│   ├── CLI-DEVELOPMENT-COMPLETE.md   # CLI summary
-│   └── cli/
-│       ├── README.md                 # CLI docs
-│       ├── QUICKSTART.md             # CLI quick start
-│       └── IMPLEMENTATION.md         # CLI internals
-│
-└── Reference/
-    └── docs/
-        ├── API-GUIDE.md              # API reference
-        ├── ai-common-bugs-and-fixes.md
-        ├── ai-orchestrator-notes.md
-        └── ai-routing-heuristics.md
+└── cli/
+    ├── README.md                      # CLI docs
+    ├── QUICKSTART.md                  # CLI quick start
+    └── IMPLEMENTATION.md              # CLI internals
 ```
 
 ## 🎯 Quick Navigation by Task
@@ -202,10 +204,10 @@ ai-mcp-gateway/
 → [ARCHITECTURE.md](./ARCHITECTURE.md)
 
 **Use the HTTP API**
-→ [README.md](./README.md#http-api-usage) + [docs/API-GUIDE.md](./docs/API-GUIDE.md)
+→ [README.md](../README.md#http-api-usage) + [API-GUIDE.md](./API-GUIDE.md)
 
 **Use the CLI tool**
-→ [cli/QUICKSTART.md](./cli/QUICKSTART.md)
+→ [cli/QUICKSTART.md](../cli/QUICKSTART.md)
 
 **Monitor the server**
 → [SERVER-STATS-GUIDE.md](./SERVER-STATS-GUIDE.md)
@@ -223,16 +225,16 @@ ai-mcp-gateway/
 → [IMPROVEMENTS-SUMMARY.md](./IMPROVEMENTS-SUMMARY.md)
 
 **Contribute to the project**
-→ [README.md](./README.md#contributing)
+→ [README.md](../README.md#contributing)
 
 ## 📝 Document Maintenance
 
 ### Active Documents
 These are actively maintained and should be kept up-to-date:
-- README.md
+- README.md (root)
 - ARCHITECTURE.md
 - QUICK-REFERENCE.md
-- All guides in root (DOCKER-*, SERVER-*, PROVIDER-*, TESTING.md)
+- All guides (DOCKER-*, SERVER-*, PROVIDER-*, TESTING.md)
 - cli/ documentation
 
 ### Reference Documents

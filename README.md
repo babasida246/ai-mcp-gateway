@@ -50,6 +50,8 @@ An intelligent Model Context Protocol (MCP) server and HTTP API that orchestrate
 - [Testing](#testing)
 - [Contributing](#contributing)
 
+📚 **[Complete Documentation Index](docs/DOCUMENTATION-INDEX.md)** - Navigate all guides and references
+
 ---
 
 ## 🚀 Quick Start
@@ -81,7 +83,7 @@ make prod   # Start all services
 make logs   # View logs
 ```
 
-See **[DOCKER-QUICKSTART.md](DOCKER-QUICKSTART.md)** for details.
+See **[DOCKER-QUICKSTART.md](docs/DOCKER-QUICKSTART.md)** for details.
 
 ### Option 2: Local Development
 
@@ -379,7 +381,7 @@ Response:
 }
 ```
 
-See **[SERVER-STATS-GUIDE.md](SERVER-STATS-GUIDE.md)** for detailed monitoring guide.
+See **[SERVER-STATS-GUIDE.md](docs/SERVER-STATS-GUIDE.md)** for detailed monitoring guide.
 
 #### POST /v1/mcp-cli
 Handle CLI tool requests (chat, code, diff modes).
@@ -438,8 +440,8 @@ make dev   # Development mode
 
 ### Documentation
 
-- **[DOCKER-QUICKSTART.md](DOCKER-QUICKSTART.md)** - Quick reference guide
-- **[DOCKER-DEPLOYMENT.md](DOCKER-DEPLOYMENT.md)** - Comprehensive deployment guide with:
+- **[DOCKER-QUICKSTART.md](docs/DOCKER-QUICKSTART.md)** - Quick reference guide
+- **[DOCKER-DEPLOYMENT.md](docs/DOCKER-DEPLOYMENT.md)** - Comprehensive deployment guide with:
   - Multi-stage builds
   - Production best practices
   - Environment configuration
