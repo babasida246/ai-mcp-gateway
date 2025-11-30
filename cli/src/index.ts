@@ -40,12 +40,12 @@ program
     .command('chat [message]')
     .description('Chat with AI (interactive mode if no message provided)')
     .option('-i, --interactive', 'Force interactive mode')
-    .action(async (message: string | undefined, options: any) => {
+    .action(async (message: string | undefined, options: Record<string, unknown>) => {
         const globalOpts = program.opts();
         await chatCommand(message, {
-            endpoint: globalOpts.endpoint,
-            apiKey: globalOpts.apiKey,
-            interactive: options.interactive,
+            endpoint: globalOpts.endpoint as string | undefined,
+            apiKey: globalOpts.apiKey as string | undefined,
+            interactive: options.interactive as boolean | undefined,
         });
     });
 
@@ -59,17 +59,17 @@ program
     .option('--no-related', 'Skip related files analysis')
     .option('-c, --create', 'Create new code instead of analyzing existing file')
     .option('-o, --output <file>', 'Output file for generated code')
-    .action(async (file: string, options: any) => {
-        const globalOpts = program.opts();
-        await codeCommand(file, {
-            prompt: options.prompt,
-            endpoint: globalOpts.endpoint,
-            apiKey: globalOpts.apiKey,
-            stdin: options.stdin,
-            context: options.context,
-            related: options.related,
-            create: options.create,
-            output: options.output,
+    .action(async (arg: string, options: Record<string, unknown>) => {
+        const globalOpts = program.opts() as Record<string, unknown>;
+        await codeCommand(arg, {
+            prompt: options.prompt as string | undefined,
+            endpoint: globalOpts.endpoint as string | undefined,
+            apiKey: globalOpts.apiKey as string | undefined,
+            stdin: options.stdin as boolean | undefined,
+            context: options.context as boolean | undefined,
+            related: options.related as boolean | undefined,
+            create: options.create as boolean | undefined,
+            output: options.output as string | undefined,
         });
     });
 
@@ -79,13 +79,13 @@ program
     .description('Request unified diff patch from AI')
     .option('-p, --prompt <text>', 'Custom prompt for changes')
     .option('--apply', 'Automatically apply the patch (not implemented)')
-    .action(async (file: string, options: any) => {
-        const globalOpts = program.opts();
-        await diffCommand(file, {
-            prompt: options.prompt,
-            endpoint: globalOpts.endpoint,
-            apiKey: globalOpts.apiKey,
-            apply: options.apply,
+    .action(async (arg: string, options: Record<string, unknown>) => {
+        const globalOpts = program.opts() as Record<string, unknown>;
+        await diffCommand(arg, {
+            prompt: options.prompt as string | undefined,
+            endpoint: globalOpts.endpoint as string | undefined,
+            apiKey: globalOpts.apiKey as string | undefined,
+            apply: options.apply as boolean | undefined,
         });
     });
 
@@ -96,14 +96,14 @@ program
     .option('-p, --prompt <text>', 'Custom analysis prompt')
     .option('-m, --max-files <number>', 'Maximum files to analyze (default: 10)', '10')
     .option('-r, --recursive', 'Include subdirectories')
-    .action(async (pattern: string, options: any) => {
-        const globalOpts = program.opts();
+    .action(async (pattern: string, options: Record<string, unknown>) => {
+        const globalOpts = program.opts() as Record<string, unknown>;
         await analyzeCommand(pattern, {
-            prompt: options.prompt,
-            endpoint: globalOpts.endpoint,
-            apiKey: globalOpts.apiKey,
-            maxFiles: parseInt(options.maxFiles),
-            recursive: options.recursive,
+            prompt: options.prompt as string | undefined,
+            endpoint: globalOpts.endpoint as string | undefined,
+            apiKey: globalOpts.apiKey as string | undefined,
+            maxFiles: parseInt(options.maxFiles as string),
+            recursive: options.recursive as boolean | undefined,
         });
     });
 
@@ -119,19 +119,16 @@ program
     .option('-l, --max-layer <layer>', 'Maximum layer to use (L0/L1/L2/L3)')
     .option('--enable-test', 'Enable testing during generation')
     .option('--enable-debug', 'Enable debug mode')
-    .action(async (description: string, options: any) => {
-        const globalOpts = program.opts();
+    .action(async (description: string, options: Record<string, unknown>) => {
+        const globalOpts = program.opts() as Record<string, unknown>;
         await createProjectCommand(description, {
-            endpoint: globalOpts.endpoint,
-            apiKey: globalOpts.apiKey,
-            output: options.output,
-            noInstall: options.noInstall,
-            noTest: options.noTest,
-            verbose: options.verbose,
-            budget: options.budget,
-            maxLayer: options.maxLayer,
-            enableTest: options.enableTest,
-            enableDebug: options.enableDebug,
+            endpoint: globalOpts.endpoint as string | undefined,
+            apiKey: globalOpts.apiKey as string | undefined,
+            output: options.output as string | undefined,
+            budget: options.budget as number | undefined,
+            maxLayer: options.maxLayer as string | undefined,
+            noTests: options.noTest as boolean | undefined,
+            debug: options.enableDebug as boolean | undefined,
         });
     });
 

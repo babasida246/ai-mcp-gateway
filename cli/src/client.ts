@@ -24,6 +24,12 @@ export interface MCPRequest {
 export interface MCPResponse {
     message: string;
     patch?: string;
+    model?: string;
+    tokens?: {
+        input: number;
+        output: number;
+        total: number;
+    };
     cost?: number;
     metadata?: {
         tokens: number;
