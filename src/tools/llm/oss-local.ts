@@ -52,7 +52,7 @@ export class OSSLocalClient implements LLMClient {
             }
 
             const data = await response.json();
-            const content = data.response || '';
+            const content = (data as { response?: string }).response || '';
 
             // Estimate tokens since local models might not report them
             const inputTokens = estimateTokens(request.prompt);

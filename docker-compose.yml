@@ -1,0 +1,159 @@
+services:
+  # AI MCP Gateway - API Server
+  ai-mcp-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-mcp-gateway
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Mode
+      MODE: api
+      
+      # API Configuration
+      API_PORT: 3000
+      API_HOST: 0.0.0.0
+      API_CORS_ORIGIN: "*"
+      
+      # LLM Provider API Keys (set your actual keys here)
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      
+      # OpenRouter Configuration
+      OPENROUTER_FALLBACK_MODELS: ${OPENROUTER_FALLBACK_MODELS:-x-ai/grok-beta,qwen/qwen-2.5-coder-32b-instruct,meta-llama/llama-3.1-8b-instruct:free}
+      OPENROUTER_REPLACE_OPENAI: ${OPENROUTER_REPLACE_OPENAI:-openai/gpt-4o-mini}
+      OPENROUTER_REPLACE_CLAUDE: ${OPENROUTER_REPLACE_CLAUDE:-anthropic/claude-3.5-sonnet}
+      
+      # OSS/Local Model (optional)
+      OSS_MODEL_ENABLED: ${OSS_MODEL_ENABLED:-false}
+      OSS_MODEL_ENDPOINT: ${OSS_MODEL_ENDPOINT:-http://localhost:11434}
+      OSS_MODEL_NAME: ${OSS_MODEL_NAME:-llama3:8b}
+      
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: 0
+      
+      # PostgreSQL Configuration
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_mcp_gateway}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-ai_mcp_gateway}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_SSL: false
+      
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FILE: logs/ai-mcp-gateway.log
+      
+      # Routing Configuration
+      DEFAULT_LAYER: ${DEFAULT_LAYER:-L0}
+      ENABLE_CROSS_CHECK: ${ENABLE_CROSS_CHECK:-true}
+      ENABLE_AUTO_ESCALATE: ${ENABLE_AUTO_ESCALATE:-true}
+      MAX_ESCALATION_LAYER: ${MAX_ESCALATION_LAYER:-L2}
+      
+      # Cost Tracking
+      ENABLE_COST_TRACKING: ${ENABLE_COST_TRACKING:-true}
+      COST_ALERT_THRESHOLD: ${COST_ALERT_THRESHOLD:-1.00}
+      
+      # MCP Server
+      MCP_SERVER_NAME: ai-mcp-gateway
+      MCP_SERVER_VERSION: 0.1.0
+    
+    volumes:
+      - ./logs:/app/logs
+    
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    
+    networks:
+      - ai-mcp-network
+    
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: ai-mcp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    networks:
+      - ai-mcp-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai-mcp-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_mcp_gateway}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - ai-mcp-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Ollama (Optional - for local models)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ai-mcp-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - ai-mcp-network
+    profiles:
+      - with-ollama
+    # Uncomment if you have GPU
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+networks:
+  ai-mcp-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+  ollama-data:
+    driver: local

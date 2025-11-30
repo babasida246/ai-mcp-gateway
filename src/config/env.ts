@@ -17,12 +17,19 @@ const envSchema = z.object({
     ANTHROPIC_API_KEY: z.string().optional(),
     OPENAI_API_KEY: z.string().optional(),
 
+    // OpenRouter Configuration
+    OPENROUTER_FALLBACK_MODELS: z.string().default('x-ai/grok-beta,qwen/qwen-2.5-coder-32b-instruct,meta-llama/llama-3.1-8b-instruct:free'),
+    // Map OpenRouter models to replace OpenAI/Claude models
+    OPENROUTER_REPLACE_OPENAI: z.string().default('openai/gpt-4o-mini'),
+    OPENROUTER_REPLACE_CLAUDE: z.string().default('anthropic/claude-3.5-sonnet'),
+
     // OSS/Local Model
     OSS_MODEL_ENDPOINT: z.string().default('http://localhost:11434'),
     OSS_MODEL_ENABLED: z
         .string()
-        .transform((val) => val === 'true')
+        .transform((val: string) => val === 'true')
         .default('false'),
+    OSS_MODEL_NAME: z.string().default('llama3:8b'),
 
     // Redis
     REDIS_HOST: z.string().default('localhost'),
@@ -39,7 +46,7 @@ const envSchema = z.object({
     DB_PASSWORD: z.string().optional(),
     DB_SSL: z
         .string()
-        .transform((val) => val === 'true')
+        .transform((val: string) => val === 'true')
         .default('false'),
 
     // HTTP API
@@ -55,22 +62,22 @@ const envSchema = z.object({
     DEFAULT_LAYER: z.string().default('L0'),
     ENABLE_CROSS_CHECK: z
         .string()
-        .transform((val) => val === 'true')
+        .transform((val: string) => val === 'true')
         .default('true'),
     ENABLE_AUTO_ESCALATE: z
         .string()
-        .transform((val) => val === 'true')
+        .transform((val: string) => val === 'true')
         .default('true'),
     MAX_ESCALATION_LAYER: z.string().default('L2'),
 
     // Cost Tracking
     ENABLE_COST_TRACKING: z
         .string()
-        .transform((val) => val === 'true')
+        .transform((val: string) => val === 'true')
         .default('true'),
     COST_ALERT_THRESHOLD: z
         .string()
-        .transform((val) => parseFloat(val))
+        .transform((val: string) => parseFloat(val))
         .default('1.00'),
 });
 
@@ -85,7 +92,7 @@ export function loadEnv(): Env {
     } catch (error) {
         if (error instanceof z.ZodError) {
             console.error('❌ Environment validation failed:');
-            error.errors.forEach((err) => {
+            error.errors.forEach((err: z.ZodIssue) => {
                 console.error(`  - ${err.path.join('.')}: ${err.message}`);
             });
             throw new Error('Invalid environment configuration');

@@ -277,6 +277,161 @@ export class ContextManager {
             });
         }
     }
+
+    /**
+     * Get TODO list for a conversation
+     */
+    async getTodoList(conversationId: string): Promise<TodoItem[]> {
+        // Try Redis first
+        const cachedTodos = await redisCache.get<TodoItem[]>(
+            CacheKeys.todoList(conversationId)
+        );
+
+        if (cachedTodos) {
+            return cachedTodos;
+        }
+
+        // Fallback to DB
+        const result = await db.query<{
+            id: number;
+            title: string;
+            description: string;
+            status: string;
+        }>(
+            `SELECT id, title, description, status 
+             FROM todo_items 
+             WHERE conversation_id = $1 
+             ORDER BY created_at ASC`,
+            [conversationId]
+        );
+
+        if (!result || result.rows.length === 0) {
+            return [];
+        }
+
+        const todos: TodoItem[] = result.rows.map((row) => ({
+            id: row.id,
+            title: row.title,
+            description: row.description,
+            status: row.status as TodoItem['status'],
+        }));
+
+        // Cache in Redis
+        await redisCache.set(
+            CacheKeys.todoList(conversationId),
+            todos,
+            1800 // 30 minutes
+        );
+
+        return todos;
+    }
+
+    /**
+     * Update TODO list
+     */
+    async updateTodoList(conversationId: string, todos: TodoItem[]): Promise<void> {
+        // Update Redis
+        await redisCache.set(
+            CacheKeys.todoList(conversationId),
+            todos,
+            1800
+        );
+
+        // Update DB (simplified - delete and recreate)
+        try {
+            await db.query(
+                'DELETE FROM todo_items WHERE conversation_id = $1',
+                [conversationId]
+            );
+
+            for (const todo of todos) {
+                await db.insert('todo_items', {
+                    conversation_id: conversationId,
+                    title: todo.title,
+                    description: todo.description,
+                    status: todo.status,
+                });
+            }
+
+            logger.debug('TODO list updated', { conversationId, count: todos.length });
+        } catch (error) {
+            logger.error('Failed to update TODO list in DB', {
+                conversationId,
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+        }
+    }
+
+    /**
+     * Build context for LLM prompt
+     */
+    async buildPromptContext(
+        conversationId: string,
+        includeMessages = 5
+    ): Promise<string> {
+        const summary = await this.getSummary(conversationId);
+        const messages = await this.getRecentMessages(conversationId, includeMessages);
+        const todos = await this.getTodoList(conversationId);
+
+        const context = {
+            summary: summary || { conversationId },
+            recentMessages: messages,
+            todos: todos.filter(t => t.status !== 'completed'),
+        };
+
+        return JSON.stringify(context, null, 2);
+    }
+
+    /**
+     * Auto-summarize long conversations
+     */
+    async autoSummarize(conversationId: string): Promise<void> {
+        const messageCount = await this.getMessageCount(conversationId);
+
+        // Only summarize if we have enough messages
+        if (messageCount < 10) {
+            return;
+        }
+
+        const summary = await this.getSummary(conversationId);        // Build new summary from messages
+        const newSummary: ContextSummary = {
+            conversationId,
+            stack: summary?.stack || [],
+            architecture: summary?.architecture || '',
+            modules: summary?.modules || [],
+            mainFiles: summary?.mainFiles || [],
+            decisions: summary?.decisions || [],
+            todos: await this.getTodoList(conversationId),
+            lastUpdated: new Date().toISOString(),
+        };
+
+        await this.updateSummary(conversationId, newSummary);
+        logger.info('Auto-summarized conversation', { conversationId, messageCount });
+    }
+
+    /**
+     * Get message count for a conversation
+     */
+    async getMessageCount(conversationId: string): Promise<number> {
+        const result = await db.query<{ count: number }>(
+            `SELECT COUNT(*) as count FROM messages WHERE conversation_id = $1`,
+            [conversationId]
+        );
+
+        return result?.rows[0]?.count || 0;
+    }
+
+    /**
+     * Clear conversation context from cache
+     */
+    async clearCache(conversationId: string): Promise<void> {
+        await redisCache.del(CacheKeys.conversationSummary(conversationId));
+        await redisCache.del(CacheKeys.contextMessages(conversationId));
+        await redisCache.del(CacheKeys.todoList(conversationId));
+        await redisCache.del(CacheKeys.conversationMeta(conversationId));
+
+        logger.info('Cleared conversation cache', { conversationId });
+    }
 }
 
 // Singleton instance

@@ -23,19 +23,22 @@ An intelligent Model Context Protocol (MCP) server and HTTP API that orchestrate
 - 🔄 **Self-Improvement**: Documents patterns, bugs, and routing heuristics
 - 🛠️ **Extensible**: Easy to add new models, providers, and tools
 
-### NEW: Stateless Architecture
-- 🗄️ **Redis Cache Layer**: Hot storage for LLM responses, context summaries, routing hints
-- 💾 **PostgreSQL Database**: Cold storage for conversations, messages, LLM calls, analytics
-- 🌐 **HTTP API Mode**: Stateless REST API with `/v1/route`, `/v1/code-agent`, `/v1/chat` endpoints
+### NEW: Stateless Architecture ✨
+- 🌐 **HTTP API Gateway**: RESTful API for multi-client access (CLI, Telegram, Web UI, CI/CD)
+- 🗄️ **Redis Cache Layer**: Hot storage for LLM responses, context summaries, routing hints (with TTL)
+- 💾 **PostgreSQL Database**: Cold storage for conversations, messages, LLM call logs, analytics
 - 📦 **Context Management**: Two-tier context with hot (Redis) + cold (DB) layers
-- 🔗 **Handoff Packages**: Optimized inter-layer communication for model escalation
-- 📝 **TODO Tracking**: Persistent GitHub Copilot-style TODO lists with Redis/DB storage
+- 🔗 **Handoff Builder**: Optimized inter-layer communication for model escalation
+- 📝 **TODO Integration**: Persistent TODO lists with full CRUD via Redis/DB
+- 📊 **Stats & Analytics**: `/v1/stats` endpoints for cost tracking and usage analytics
+- 🎭 **Multi-Client Support**: Single gateway serves CLI, Telegram bots, Web UIs, automation tools
 
 ---
 
 ## 📋 Table of Contents
 
 - [Quick Start](#quick-start)
+- [CLI Tool](#cli-tool)
 - [Architecture](#architecture)
 - [Dual Mode Operation](#dual-mode-operation)
 - [Configuration](#configuration)
@@ -51,15 +54,45 @@ An intelligent Model Context Protocol (MCP) server and HTTP API that orchestrate
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Option 1: Docker (Recommended) 🐳
 
+**Fastest way to get started with full stack (Gateway + Redis + PostgreSQL):**
+
+```bash
+# 1. Clone repository
+git clone https://github.com/yourusername/ai-mcp-gateway.git
+cd ai-mcp-gateway
+
+# 2. Setup environment
+cp .env.docker.example .env.docker
+# Edit .env.docker and add your OPENROUTER_API_KEY
+
+# 3. Start with Docker Compose
+docker-compose --env-file .env.docker up -d
+
+# 4. Check health
+curl http://localhost:3000/health
+```
+
+**Or using Makefile:**
+```bash
+make setup  # Create .env.docker
+make prod   # Start all services
+make logs   # View logs
+```
+
+See **[DOCKER-QUICKSTART.md](DOCKER-QUICKSTART.md)** for details.
+
+### Option 2: Local Development
+
+**Prerequisites:**
 - Node.js >= 20.0.0
 - npm or pnpm (recommended)
 - API keys for desired providers (OpenRouter, Anthropic, OpenAI)
 - **Optional**: Redis (for caching)
 - **Optional**: PostgreSQL (for persistence)
 
-### Installation
+**Installation:**
 
 ```bash
 # Clone the repository
@@ -76,7 +109,7 @@ cp .env.example .env
 nano .env
 ```
 
-### Build
+**Build:**
 
 ```bash
 # Build the project
@@ -165,6 +198,63 @@ Configure in Claude Desktop (`~/Library/Application Support/Claude/claude_deskto
 
 ### 2. HTTP API Mode
 Stateless REST API for web services and integrations.
+
+```bash
+npm run start:api
+```
+
+Access API at `http://localhost:3000`.
+
+---
+
+## 🖥️ CLI Tool
+
+A powerful command-line interface for interacting with the MCP Gateway, inspired by Claude CLI.
+
+### Installation
+
+```bash
+cd cli
+npm install
+npm run build
+npm install -g .
+```
+
+### Quick Start
+
+```bash
+# Configure endpoint
+export MCP_ENDPOINT=http://localhost:3000
+
+# Interactive chat
+mcp chat
+
+# Single message
+mcp chat "What is async/await?"
+
+# Code review
+mcp code src/app.ts "Review for bugs"
+
+# Code from stdin
+cat myfile.js | mcp code - "Optimize this"
+
+# Generate diff patch
+mcp diff src/handler.ts "Add error handling"
+mcp diff app.js "Fix memory leak" | git apply
+```
+
+### Features
+
+- 🤖 **Interactive Chat** - Real-time conversation with AI
+- 📝 **Code Analysis** - Expert code reviews and suggestions
+- 🔧 **Diff Generation** - Unified patches for code changes
+- 🎨 **Syntax Highlighting** - Colored terminal output
+- 🔌 **Pipe Support** - Works with Unix pipes
+- 📊 **Context Aware** - Includes git status and workspace files
+
+See **[cli/README.md](cli/README.md)** and **[cli/QUICKSTART.md](cli/QUICKSTART.md)** for complete documentation.
+
+---
 
 ```bash
 npm run start:api
@@ -265,6 +355,105 @@ Response:
   "timestamp": "2025-11-22T06:42:00.000Z"
 }
 ```
+
+#### GET /v1/server-stats
+Real-time server statistics.
+
+```bash
+curl http://localhost:3000/v1/server-stats
+```
+
+Response:
+```json
+{
+  "uptime": { "seconds": 3600, "formatted": "1h 0m 0s" },
+  "requests": { "total": 150, "averageDuration": 234.5 },
+  "llm": {
+    "totalCalls": 145,
+    "tokens": { "input": 12500, "output": 45000, "total": 57500 },
+    "cost": { "total": 0.125, "currency": "USD" }
+  },
+  "memory": { "heapUsed": 45, "heapTotal": 120, "unit": "MB" },
+  "providers": { "openai": true, "anthropic": true, "openrouter": true },
+  "timestamp": "2025-11-29T15:30:00.000Z"
+}
+```
+
+See **[SERVER-STATS-GUIDE.md](SERVER-STATS-GUIDE.md)** for detailed monitoring guide.
+
+#### POST /v1/mcp-cli
+Handle CLI tool requests (chat, code, diff modes).
+
+```bash
+curl -X POST http://localhost:3000/v1/mcp-cli \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "chat",
+    "message": "What is async/await?",
+    "context": {
+      "cwd": "/path/to/project",
+      "files": ["src/index.ts"],
+      "gitStatus": "modified:   src/app.ts"
+    }
+  }'
+```
+
+Response:
+```json
+{
+  "message": "async/await is syntactic sugar over Promises...",
+  "patch": null,
+  "model": "claude-3-5-sonnet-20241022",
+  "tokens": { "input": 45, "output": 180, "total": 225 },
+  "cost": 0.0018
+}
+```
+
+Modes:
+- `chat` - Interactive conversation
+- `code` - Code analysis/review
+- `diff` - Generate unified diff patches
+
+See **[cli/README.md](cli/README.md)** for CLI tool documentation.
+
+---
+
+## 🐳 Docker Deployment
+
+The project includes complete Docker support for easy deployment:
+
+### Quick Deploy
+
+```bash
+# Production (with Redis + PostgreSQL)
+docker-compose --env-file .env.docker up -d
+
+# Development (gateway only)
+docker-compose -f docker-compose.dev.yml --env-file .env.docker up -d
+
+# Using Makefile
+make prod  # Production stack
+make dev   # Development mode
+```
+
+### Documentation
+
+- **[DOCKER-QUICKSTART.md](DOCKER-QUICKSTART.md)** - Quick reference guide
+- **[DOCKER-DEPLOYMENT.md](DOCKER-DEPLOYMENT.md)** - Comprehensive deployment guide with:
+  - Multi-stage builds
+  - Production best practices
+  - Environment configuration
+  - Scaling and monitoring
+  - Backup/restore procedures
+  - Troubleshooting tips
+
+### Docker Files
+
+- `Dockerfile` - Multi-stage build (optimized for production)
+- `docker-compose.yml` - Full stack (Gateway + Redis + PostgreSQL + Ollama)
+- `docker-compose.dev.yml` - Simplified development setup
+- `.env.docker.example` - Environment variable template
+- `Makefile` - Convenience commands for Docker operations
       "args": ["/path/to/ai-mcp-gateway/dist/index.js"]
     }
   }

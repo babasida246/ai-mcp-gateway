@@ -1,4 +1,4 @@
-import { ModelConfig } from '../../config/models.js';
+import { ModelConfig } from '../config/models.js';
 
 /**
  * Calculate cost for an LLM call

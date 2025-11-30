@@ -60,36 +60,36 @@ export const MODEL_CATALOG: ModelConfig[] = [
         enabled: false, // Enable when OSS_MODEL_ENABLED=true
     },
     {
-        id: 'openrouter-mistral-7b-free',
+        id: 'openrouter-grok-beta',
         provider: 'openrouter',
-        apiModelName: 'mistralai/mistral-7b-instruct:free',
+        apiModelName: 'x-ai/grok-beta',
         layer: 'L0',
-        relativeCost: 0,
-        pricePer1kInputTokens: 0,
-        pricePer1kOutputTokens: 0,
+        relativeCost: 1,
+        pricePer1kInputTokens: 0.005,
+        pricePer1kOutputTokens: 0.015,
         capabilities: {
             code: true,
             general: true,
-            reasoning: false,
+            reasoning: true,
         },
-        contextWindow: 8192,
-        enabled: true,
+        contextWindow: 131072,
+        enabled: false, // Disabled - model not available
     },
     {
-        id: 'openrouter-qwen-7b-free',
+        id: 'openrouter-qwen-coder-32b',
         provider: 'openrouter',
-        apiModelName: 'qwen/qwen-2-7b-instruct:free',
+        apiModelName: 'qwen/qwen-2.5-coder-32b-instruct',
         layer: 'L0',
-        relativeCost: 0,
-        pricePer1kInputTokens: 0,
-        pricePer1kOutputTokens: 0,
+        relativeCost: 1,
+        pricePer1kInputTokens: 0.0006,
+        pricePer1kOutputTokens: 0.0006,
         capabilities: {
             code: true,
             general: true,
-            reasoning: false,
+            reasoning: true,
         },
         contextWindow: 32768,
-        enabled: true,
+        enabled: false, // Disabled - model not available
     },
 
     // Layer L1 - Low-cost models

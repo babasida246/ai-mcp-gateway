@@ -1,6 +1,6 @@
-import { redisCache, CacheKeys } from '../cache/redis.js';
-import { db } from '../db/postgres.js';
-import { logger } from '../logging/logger.js';
+import { redisCache, CacheKeys } from '../../cache/redis.js';
+import { db } from '../../db/postgres.js';
+import { logger } from '../../logging/logger.js';
 
 /**
  * TODO item interface

@@ -318,7 +318,7 @@ export class SelfImprovementManager {
 
             if (exists && exists.rows.length > 0) {
                 // Update occurrence count
-                const currentOccurrences = exists.rows[0].occurrences;
+                const currentOccurrences = (exists.rows[0] as { occurrences: number }).occurrences;
                 await db.update(
                     'bug_patterns',
                     { pattern: pattern.pattern },

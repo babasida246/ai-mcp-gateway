@@ -1,0 +1,47 @@
+# Docker Compose for Development
+# Simpler setup - only essential services
+
+services:
+  # AI MCP Gateway - API Server
+  ai-mcp-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-mcp-gateway-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      MODE: api
+      API_PORT: 3000
+      API_HOST: 0.0.0.0
+      
+      # LLM Keys - set these!
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      
+      # OpenRouter Config
+      OPENROUTER_FALLBACK_MODELS: x-ai/grok-beta,qwen/qwen-2.5-coder-32b-instruct
+      OPENROUTER_REPLACE_OPENAI: openai/gpt-4o-mini
+      OPENROUTER_REPLACE_CLAUDE: anthropic/claude-3.5-sonnet
+      
+      # No database/redis for dev (optional features)
+      # Gateway will work without them
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      
+      LOG_LEVEL: debug
+      DEFAULT_LAYER: L0
+      ENABLE_CROSS_CHECK: true
+      ENABLE_AUTO_ESCALATE: true
+    
+    volumes:
+      - ./logs:/app/logs
+    
+    networks:
+      - ai-mcp-dev
+
+networks:
+  ai-mcp-dev:
+    driver: bridge

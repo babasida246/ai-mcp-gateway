@@ -14,6 +14,7 @@
         "start": "node dist/index.js",
         "start:api": "MODE=api node dist/index.js",
         "start:mcp": "node dist/index.js",
+        "db:migrate": "node dist/db/migrate.js",
         "setup": "node quick-start.js",
         "test": "vitest run",
         "test:watch": "vitest",
@@ -49,7 +50,8 @@
     },
     "devDependencies": {
         "@playwright/test": "^1.48.0",
-        "@types/node": "^20.14.10",
+        "@types/node": "^20.19.25",
+        "@types/pg": "^8.15.6",
         "@typescript-eslint/eslint-plugin": "^8.0.0",
         "@typescript-eslint/parser": "^8.0.0",
         "@vitest/ui": "^2.1.1",

@@ -1,4 +1,4 @@
-import { Pool, QueryResult } from 'pg';
+import { Pool, QueryResult, QueryResultRow } from 'pg';
 import { env } from '../config/env.js';
 import { logger } from '../logging/logger.js';
 
@@ -74,7 +74,7 @@ class Database {
     /**
      * Execute a SQL query
      */
-    async query<T = unknown>(
+    async query<T extends QueryResultRow = QueryResultRow>(
         sql: string,
         params?: unknown[]
     ): Promise<QueryResult<T> | null> {
@@ -98,7 +98,7 @@ class Database {
     /**
      * Insert data into a table
      */
-    async insert<T = unknown>(
+    async insert<T extends QueryResultRow = QueryResultRow>(
         table: string,
         data: Record<string, unknown>
     ): Promise<T | null> {
@@ -114,7 +114,7 @@ class Database {
     /**
      * Update data in a table
      */
-    async update<T = unknown>(
+    async update<T extends QueryResultRow = QueryResultRow>(
         table: string,
         where: Record<string, unknown>,
         data: Record<string, unknown>
