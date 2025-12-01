@@ -179,6 +179,33 @@ export class APIServer {
             await this.handleMCPCLI(req, res);
         });
 
+        // Analytics endpoints (Phase 1)
+        this.app.get('/v1/analytics', async (req, res) => {
+            await this.handleGetAnalytics(req, res);
+        });
+
+        this.app.get('/v1/analytics/top-expensive', async (req, res) => {
+            await this.handleGetTopExpensive(req, res);
+        });
+
+        this.app.get('/v1/analytics/error-rate', async (req, res) => {
+            await this.handleGetErrorRate(req, res);
+        });
+
+        // Quota endpoints (Phase 1)
+        this.app.get('/v1/quota/status', async (req, res) => {
+            await this.handleGetQuotaStatus(req, res);
+        });
+
+        this.app.post('/v1/quota/update', async (req, res) => {
+            await this.handleUpdateQuota(req, res);
+        });
+
+        // Tracing endpoints (Phase 1)
+        this.app.get('/v1/traces/:traceId', async (req, res) => {
+            await this.handleGetTrace(req, res);
+        });
+
         // 404 handler
         this.app.use((req, res) => {
             res.status(404).json({
@@ -1032,6 +1059,205 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
 
             res.status(500).json({
                 error: 'Internal server error',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle GET /v1/analytics
+     */
+    private async handleGetAnalytics(req: Request, res: Response): Promise<void> {
+        try {
+            const { AnalyticsAggregator } = await import('../analytics/aggregator.js');
+            const aggregator = new AnalyticsAggregator(db.getPool());
+
+            const {
+                projectId,
+                userId,
+                startDate,
+                endDate,
+                groupBy,
+            } = req.query;
+
+            const analytics = await aggregator.getAnalytics({
+                projectId: projectId as string | undefined,
+                userId: userId as string | undefined,
+                startDate: startDate as string | undefined,
+                endDate: endDate as string | undefined,
+                groupBy: (groupBy as 'day' | 'week' | 'month') || 'day',
+            });
+
+            res.json(analytics);
+        } catch (error) {
+            logger.error('Get analytics error', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to fetch analytics',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle GET /v1/analytics/top-expensive
+     */
+    private async handleGetTopExpensive(req: Request, res: Response): Promise<void> {
+        try {
+            const { AnalyticsAggregator } = await import('../analytics/aggregator.js');
+            const aggregator = new AnalyticsAggregator(db.getPool());
+
+            const { projectId, limit } = req.query;
+
+            if (!projectId) {
+                res.status(400).json({ error: 'Missing projectId' });
+                return;
+            }
+
+            const topExpensive = await aggregator.getTopExpensiveRequests(
+                projectId as string,
+                limit ? parseInt(limit as string) : 10,
+            );
+
+            res.json(topExpensive);
+        } catch (error) {
+            logger.error('Get top expensive error', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to fetch top expensive requests',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle GET /v1/analytics/error-rate
+     */
+    private async handleGetErrorRate(req: Request, res: Response): Promise<void> {
+        try {
+            const { AnalyticsAggregator } = await import('../analytics/aggregator.js');
+            const aggregator = new AnalyticsAggregator(db.getPool());
+
+            const { projectId } = req.query;
+
+            if (!projectId) {
+                res.status(400).json({ error: 'Missing projectId' });
+                return;
+            }
+
+            const errorRate = await aggregator.getErrorRateByModel(projectId as string);
+
+            res.json(errorRate);
+        } catch (error) {
+            logger.error('Get error rate error', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to fetch error rate',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle GET /v1/quota/status
+     */
+    private async handleGetQuotaStatus(req: Request, res: Response): Promise<void> {
+        try {
+            const { QuotaEnforcer } = await import('../quota/enforcer.js');
+            const enforcer = new QuotaEnforcer(db.getPool());
+
+            const { userId, projectId } = req.query;
+
+            if (!userId || !projectId) {
+                res.status(400).json({ error: 'Missing userId or projectId' });
+                return;
+            }
+
+            const status = await enforcer.getQuotaStatus(
+                userId as string,
+                projectId as string,
+            );
+
+            if (!status) {
+                res.status(404).json({ error: 'Quota not found' });
+                return;
+            }
+
+            res.json(status);
+        } catch (error) {
+            logger.error('Get quota status error', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to fetch quota status',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle POST /v1/quota/update
+     */
+    private async handleUpdateQuota(req: Request, res: Response): Promise<void> {
+        try {
+            const { QuotaEnforcer } = await import('../quota/enforcer.js');
+            const enforcer = new QuotaEnforcer(db.getPool());
+
+            const { userId, projectId, maxTokensDaily, maxCostDaily } = req.body;
+
+            if (!userId || !projectId || !maxTokensDaily || !maxCostDaily) {
+                res.status(400).json({
+                    error: 'Missing required fields: userId, projectId, maxTokensDaily, maxCostDaily',
+                });
+                return;
+            }
+
+            await enforcer.updateQuotaLimits(
+                userId,
+                projectId,
+                maxTokensDaily,
+                maxCostDaily,
+            );
+
+            res.json({ success: true, message: 'Quota updated successfully' });
+        } catch (error) {
+            logger.error('Update quota error', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to update quota',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle GET /v1/traces/:traceId
+     */
+    private async handleGetTrace(req: Request, res: Response): Promise<void> {
+        try {
+            const { getTracer } = await import('../tracing/tracer.js');
+            const tracer = getTracer();
+
+            const { traceId } = req.params;
+
+            const trace = await tracer.getTrace(traceId);
+
+            if (!trace) {
+                res.status(404).json({ error: 'Trace not found' });
+                return;
+            }
+
+            res.json(trace);
+        } catch (error) {
+            logger.error('Get trace error', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to fetch trace',
                 details: error instanceof Error ? error.message : 'Unknown error',
             });
         }

@@ -14,6 +14,19 @@ async function main() {
         // Initialize self-improvement tables
         await selfImprovement.initializeTables();
 
+        // Initialize tracer if database is available
+        if (db.isReady()) {
+            try {
+                const { initTracer } = await import('./tracing/tracer.js');
+                initTracer(db.getPool());
+                logger.info('Tracer initialized successfully');
+            } catch (error) {
+                logger.warn('Failed to initialize tracer', {
+                    error: error instanceof Error ? error.message : 'Unknown',
+                });
+            }
+        }
+
         // Check if running in HTTP API mode
         const mode = process.env.MODE || 'mcp';
 

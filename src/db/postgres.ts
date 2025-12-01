@@ -324,6 +324,16 @@ class Database {
         }
         return this._pool;
     }
+
+    /**
+     * Get the connection pool (for analytics, quota, etc.)
+     */
+    getPool(): Pool {
+        if (!this._pool) {
+            throw new Error('Database pool not initialized');
+        }
+        return this._pool;
+    }
 }
 
 // Singleton instance
