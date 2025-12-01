@@ -1,274 +1,225 @@
-import { useEffect, useState } from 'react';
-import { Key, Plus, Trash2, Copy, Clock, Activity, CheckCircle, Terminal, Settings, Users } from 'lucide-react';
-import axios from 'axios';
+import { useState } from 'react';
+import { Plus, Copy, Trash2, Eye, EyeOff } from 'lucide-react';
 
 interface Token {
   id: string;
   name: string;
   token: string;
   createdAt: string;
-  expiresAt: string | null;
-  lastUsedAt: string | null;
-  requestCount: number;
-  status: 'active' | 'expired' | 'revoked';
+  lastUsed: string | null;
 }
 
 export default function GatewayTokens() {
-  const [tokens, setTokens] = useState<Token[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showNewTokenModal, setShowNewTokenModal] = useState(false);
-  const [newTokenForm, setNewTokenForm] = useState({
-    name: '',
-    expiresInDays: 90,
-  });
-  const [generatedToken, setGeneratedToken] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [tokens, setTokens] = useState<Token[]>([
+    {
+      id: '1',
+      name: 'Production API',
+      token: 'gmcp_1234567890abcdefghijklmnopqrstuvwxyz',
+      createdAt: '2024-01-15T10:30:00Z',
+      lastUsed: '2024-01-20T14:22:00Z',
+    },
+    {
+      id: '2',
+      name: 'Development',
+      token: 'gmcp_abcdefghij1234567890klmnopqrstuvwxyz',
+      createdAt: '2024-01-10T08:15:00Z',
+      lastUsed: null,
+    },
+  ]);
+  const [showTokens, setShowTokens] = useState<Record<string, boolean>>({});
+  const [isCreating, setIsCreating] = useState(false);
+  const [newTokenName, setNewTokenName] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadTokens();
-  }, []);
+  function generateToken(): string {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let token = 'gmcp_';
+    for (let i = 0; i < 40; i++) {
+      token += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return token;
+  }
 
-  const loadTokens = async () => {
-    setLoading(true);
+  function createToken() {
+    if (!newTokenName.trim()) return;
+
+    const newToken: Token = {
+      id: Date.now().toString(),
+      name: newTokenName,
+      token: generateToken(),
+      createdAt: new Date().toISOString(),
+      lastUsed: null,
+    };
+
+    setTokens([...tokens, newToken]);
+    setNewTokenName('');
+    setIsCreating(false);
+    setShowTokens({ ...showTokens, [newToken.id]: true });
+  }
+
+  function deleteToken(id: string) {
+    if (confirm('Are you sure you want to delete this token? This action cannot be undone.')) {
+      setTokens(tokens.filter(t => t.id !== id));
+      const newShowTokens = { ...showTokens };
+      delete newShowTokens[id];
+      setShowTokens(newShowTokens);
+    }
+  }
+
+  function toggleTokenVisibility(id: string) {
+    setShowTokens({ ...showTokens, [id]: !showTokens[id] });
+  }
+
+  async function copyToken(token: string, id: string) {
     try {
-      const response = await axios.get('http://localhost:3000/admin/gateway-tokens');
-      setTokens(response.data.tokens || []);
-    } catch (error) {
-      console.error('Failed to load tokens:', error);
-    } finally {
-      setLoading(false);
+      await navigator.clipboard.writeText(token);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
     }
-  };
+  }
 
-  const handleGenerateToken = async () => {
-    if (!newTokenForm.name.trim()) {
-      alert('Please enter a token name');
-      return;
-    }
+  function formatDate(dateStr: string | null): string {
+    if (!dateStr) return 'Never';
+    const date = new Date(dateStr);
+    return date.toLocaleString();
+  }
 
-    try {
-      const response = await axios.post('http://localhost:3000/admin/gateway-tokens', {
-        name: newTokenForm.name,
-        expiryDays: newTokenForm.expiresInDays || null,
-      });
-
-      setGeneratedToken(response.data.token.token);
-
-      // Reload tokens list
-      await loadTokens();
-    } catch (error) {
-      console.error('Failed to generate token:', error);
-      alert('Failed to generate token. See console for details.');
-    }
-  };
-
-  const handleRevokeToken = async (tokenId: string) => {
-    if (!confirm('Are you sure you want to revoke this token? This action cannot be undone.')) {
-      return;
-    }
-
-    try {
-      await axios.post(`http://localhost:3000/admin/gateway-tokens/${tokenId}/revoke`);
-      await loadTokens();
-      alert('Token revoked successfully');
-    } catch (error) {
-      console.error('Failed to revoke token:', error);
-      alert('Failed to revoke token. See console for details.');
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const closeModal = () => {
-    setShowNewTokenModal(false);
-    setGeneratedToken(null);
-    setNewTokenForm({ name: '', expiresInDays: 90 });
-  };
-
-  const getStatusBadge = (status: Token['status']) => {
-    switch (status) {
-      case 'active':
-        return <span className="badge-success flex items-center gap-1"><CheckCircle className="w-3 h-3" />Active</span>;
-      case 'expired':
-        return <span className="badge-warning flex items-center gap-1"><Clock className="w-3 h-3" />Expired</span>;
-      case 'revoked':
-        return <span className="badge-error flex items-center gap-1"><Trash2 className="w-3 h-3" />Revoked</span>;
-    }
-  };
-
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return 'Never expires';
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
-  if (loading) return <div className="text-white">Loading...</div>;
+  function maskToken(token: string): string {
+    return token.substring(0, 10) + '•'.repeat(30);
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-white">Gateway API Tokens</h1>
-        <button onClick={() => setShowNewTokenModal(true)}
-          className="btn-primary flex items-center gap-2">
+        <h1 className="text-3xl font-bold text-white">Gateway Tokens</h1>
+        <button
+          onClick={() => setIsCreating(true)}
+          className="btn-primary flex items-center gap-2"
+        >
           <Plus className="w-4 h-4" />
-          Generate New Token
+          Create Token
         </button>
       </div>
 
-      {/* Token Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Create Token Form */}
+      {isCreating && (
         <div className="card p-6">
-          <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-white mb-4">Create New Token</h2>
+          <div className="space-y-4">
             <div>
-              <p className="text-slate-400 text-sm">Total Tokens</p>
-              <p className="text-3xl font-bold text-white mt-1">{tokens.length}</p>
+              <label className="block text-sm font-semibold text-slate-300 mb-2">
+                Token Name
+              </label>
+              <input
+                type="text"
+                value={newTokenName}
+                onChange={(e) => setNewTokenName(e.target.value)}
+                placeholder="e.g., Production API, Development, Testing"
+                className="input w-full"
+                autoFocus
+              />
             </div>
-            <Key className="w-12 h-12 text-blue-400" />
+            <div className="flex items-center gap-3">
+              <button
+                onClick={createToken}
+                disabled={!newTokenName.trim()}
+                className="btn-primary"
+              >
+                Generate Token
+              </button>
+              <button
+                onClick={() => {
+                  setIsCreating(false);
+                  setNewTokenName('');
+                }}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
-        <div className="card p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-400 text-sm">Active Tokens</p>
-              <p className="text-3xl font-bold text-white mt-1">
-                {tokens.filter((t) => t.status === 'active').length}
-              </p>
-            </div>
-            <CheckCircle className="w-12 h-12 text-green-400" />
-          </div>
-        </div>
-        <div className="card p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-400 text-sm">Total Requests</p>
-              <p className="text-3xl font-bold text-white mt-1">
-                {tokens.reduce((sum, t) => sum + t.requestCount, 0).toLocaleString()}
-              </p>
-            </div>
-            <Activity className="w-12 h-12 text-purple-400" />
-          </div>
-        </div>
-      </div>
+      )}
 
-      {/* Token List */}
-      <div className="card p-6">
-        <h2 className="text-xl font-bold text-white mb-4">Active Tokens</h2>
+      {/* Tokens List */}
+      {tokens.length === 0 ? (
+        <div className="card p-12 text-center">
+          <div className="text-slate-400 text-lg mb-4">No tokens created yet</div>
+          <p className="text-slate-500 text-sm">
+            Create a token to start using the AI MCP Gateway API
+          </p>
+        </div>
+      ) : (
         <div className="space-y-4">
           {tokens.map((token) => (
-            <div key={token.id} className="p-4 bg-slate-700/50 rounded-lg">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-lg font-semibold text-white">{token.name}</h3>
-                    {getStatusBadge(token.status)}
-                  </div>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex items-center gap-2">
-                      <code className="text-slate-300 bg-slate-800 px-2 py-1 rounded font-mono">
-                        {token.token}
-                      </code>
-                      <button onClick={() => copyToClipboard(token.token)}
-                        className="text-blue-400 hover:text-blue-300">
-                        <Copy className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-slate-400 mt-3">
-                      <div>
-                        <span className="font-semibold">Created:</span> {formatDate(token.createdAt)}
-                      </div>
-                      <div>
-                        <span className="font-semibold">Expires:</span> {formatDate(token.expiresAt)}
-                      </div>
-                      <div>
-                        <span className="font-semibold">Last Used:</span> {formatDate(token.lastUsedAt)}
-                      </div>
-                      <div>
-                        <span className="font-semibold">Requests:</span> {token.requestCount.toLocaleString()}
-                      </div>
-                    </div>
+            <div key={token.id} className="card p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h3 className="text-xl font-bold text-white mb-1">{token.name}</h3>
+                  <div className="flex items-center gap-4 text-sm text-slate-400">
+                    <span>Created {formatDate(token.createdAt)}</span>
+                    <span>•</span>
+                    <span>Last used {formatDate(token.lastUsed)}</span>
                   </div>
                 </div>
-                {token.status === 'active' && (
-                  <button onClick={() => handleRevokeToken(token.id)}
-                    className="btn-danger flex items-center gap-2 ml-4">
-                    <Trash2 className="w-4 h-4" />
-                    Revoke
-                  </button>
-                )}
+                <button
+                  onClick={() => deleteToken(token.id)}
+                  className="btn-danger flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">
+                    Token
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 input font-mono text-sm">
+                      {showTokens[token.id] ? token.token : maskToken(token.token)}
+                    </div>
+                    <button
+                      onClick={() => toggleTokenVisibility(token.id)}
+                      className="btn-secondary px-3"
+                      title={showTokens[token.id] ? 'Hide token' : 'Show token'}
+                    >
+                      {showTokens[token.id] ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => copyToken(token.token, token.id)}
+                      className="btn-secondary px-3"
+                      title="Copy to clipboard"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {copiedId === token.id && (
+                    <p className="text-green-400 text-sm mt-2">✓ Copied to clipboard</p>
+                  )}
+                </div>
+
+                <div className="pt-4 border-t border-slate-700">
+                  <h4 className="text-sm font-semibold text-slate-300 mb-2">Usage Example</h4>
+                  <pre className="bg-slate-950 rounded p-3 text-xs text-slate-300 overflow-x-auto">
+{`curl -X POST http://localhost:3000/v1/chat/completions \\
+  -H "Authorization: Bearer ${showTokens[token.id] ? token.token : 'YOUR_TOKEN'}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'`}
+                  </pre>
+                </div>
               </div>
             </div>
           ))}
-        </div>
-      </div>
-
-      {/* New Token Modal */}
-      {showNewTokenModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
-            <h2 className="text-2xl font-bold text-white mb-4">Generate New Token</h2>
-
-            {generatedToken ? (
-              <div className="space-y-4">
-                <div className="bg-green-900/20 border border-green-500 rounded p-4">
-                  <p className="text-green-400 font-semibold mb-2">Token generated successfully!</p>
-                  <p className="text-sm text-slate-300 mb-3">
-                    Make sure to copy your token now. You won't be able to see it again!
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 text-sm text-white bg-slate-900 p-3 rounded font-mono break-all">
-                      {generatedToken}
-                    </code>
-                    <button onClick={() => copyToClipboard(generatedToken)}
-                      className="btn-primary flex items-center gap-2">
-                      <Copy className="w-4 h-4" />
-                      Copy
-                    </button>
-                  </div>
-                </div>
-                <button onClick={() => {
-                  setGeneratedToken(null);
-                  setShowNewTokenModal(false);
-                }}
-                  className="btn-primary w-full">
-                  Done
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-white font-semibold mb-2">Token Name</label>
-                  <input type="text" value={newTokenForm.name}
-                    onChange={(e) => setNewTokenForm({ ...newTokenForm, name: e.target.value })}
-                    placeholder="e.g., Production API"
-                    className="input w-full" />
-                </div>
-                <div>
-                  <label className="block text-white font-semibold mb-2">Expires In (Days)</label>
-                  <input type="number" value={newTokenForm.expiresInDays}
-                    onChange={(e) => setNewTokenForm({ ...newTokenForm, expiresInDays: parseInt(e.target.value) })}
-                    className="input w-full" />
-                  <p className="text-sm text-slate-400 mt-1">Set to 0 for no expiration</p>
-                </div>
-                <div className="flex gap-3">
-                  <button onClick={handleGenerateToken}
-                    className="btn-primary flex-1">
-                    Generate Token
-                  </button>
-                  <button onClick={() => setShowNewTokenModal(false)}
-                    className="btn-secondary flex-1">
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       )}
     </div>

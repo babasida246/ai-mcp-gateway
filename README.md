@@ -1,11 +1,12 @@
 # AI MCP Gateway
 
-**Intelligent Multi-Model Orchestrator with Cost Optimization & Dynamic Routing**
+**Intelligent Multi-Model Orchestrator with Cost Optimization & Admin Dashboard**
 
-A production-ready Model Context Protocol (MCP) server and HTTP API Gateway that orchestrates multiple AI models with intelligent N-layer routing, budget tracking, task-specific model selection, and automatic fallback to free models.
+A production-ready Model Context Protocol (MCP) server and HTTP API Gateway that orchestrates multiple AI models with intelligent N-layer routing, budget tracking, task-specific model selection, real-time monitoring, and comprehensive admin dashboard.
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
+[![React](https://img.shields.io/badge/React-19.2-blue)](https://react.dev/)
 [![MCP](https://img.shields.io/badge/MCP-0.5-orange)](https://modelcontextprotocol.io/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -22,8 +23,18 @@ A production-ready Model Context Protocol (MCP) server and HTTP API Gateway that
 ### 💰 Cost Optimization
 - **Budget Tracking**: Set per-project budgets with automatic enforcement
 - **Free-First Strategy**: Prioritizes free models (L0), escalates only when necessary
-- **Cost Monitoring**: Real-time cost tracking and alerts via `/health` endpoint
+- **Real-time Cost Monitoring**: Live tracking and alerts via dashboard and `/health` endpoint
 - **Layer Limits**: Configure maximum escalation tier per project
+
+### 📊 Admin Dashboard (NEW)
+- **Real-time Monitoring**: Live metrics for requests, costs, tokens, and latency
+- **Analytics Dashboard**: Time-series charts, model usage breakdown, cost analysis
+- **Provider Management**: Enable/disable providers, configure API keys, health monitoring
+- **Model Management**: Add/remove models, enable/disable layers dynamically
+- **Alert System**: Custom alerts with multi-channel notifications (Email, Slack, Webhook)
+- **Token Management**: Create, view, and manage API gateway tokens
+- **Docker Logs**: Real-time log viewer with filtering and search
+- **Settings Panel**: Comprehensive system configuration interface
 
 ### 🔧 Advanced Capabilities
 - **Cross-Checking**: Multiple models validate each other's outputs for critical tasks
@@ -34,6 +45,7 @@ A production-ready Model Context Protocol (MCP) server and HTTP API Gateway that
 
 ### 🌐 Multi-Client Architecture
 - **HTTP API Gateway**: RESTful endpoints for any client (CLI, Web, Telegram, CI/CD)
+- **Admin Dashboard**: Modern React-based web UI for system management (port 5173)
 - **MCP Server Mode**: Native support for MCP clients (Claude Desktop, VSCode)
 - **CLI Tool**: Powerful command-line interface with project scaffolding
 - **Docker Ready**: Full containerization with docker-compose
@@ -43,6 +55,7 @@ A production-ready Model Context Protocol (MCP) server and HTTP API Gateway that
 ## 📋 Table of Contents
 
 - [Quick Start](#quick-start)
+- [Admin Dashboard](#admin-dashboard)
 - [CLI Tool](#cli-tool)
 - [Configuration](#configuration)
 - [HTTP API](#http-api)
@@ -58,9 +71,9 @@ A production-ready Model Context Protocol (MCP) server and HTTP API Gateway that
 
 ## 🚀 Quick Start
 
-### Option 1: Docker (Recommended) 🐳
+### Docker (Recommended) 🐳
 
-**Fastest way to get started with full stack (Gateway + Redis + PostgreSQL):**
+**Fastest way to get started with full stack (Gateway + Dashboard + Redis + PostgreSQL):**
 
 ```bash
 # 1. Clone repository
@@ -71,21 +84,106 @@ cd ai-mcp-gateway
 cp .env.docker.example .env.docker
 # Edit .env.docker and add your OPENROUTER_API_KEY
 
-# 3. Start with Docker Compose
+# 3. Start all services
 docker-compose --env-file .env.docker up -d
 
-# 4. Check health
-curl http://localhost:3000/health
+# 4. Access services
+# Gateway API: http://localhost:3000
+# Admin Dashboard: http://localhost:5173
+# Health Check: http://localhost:3000/health
 ```
 
 **Or using Makefile:**
 ```bash
 make setup  # Create .env.docker
-make prod   # Start all services
+make prod   # Start all services (gateway + dashboard + db + redis)
 make logs   # View logs
+make stop   # Stop all services
 ```
 
+**Services included:**
+- `ai-mcp-gateway` - API Gateway (port 3000)
+- `ai-mcp-dashboard` - Admin Dashboard (port 5173)
+- `ai-mcp-postgres` - PostgreSQL 15 (port 5432)
+- `ai-mcp-redis` - Redis 7 (port 6379)
+
 See **[DOCKER-QUICKSTART.md](docs/DOCKER-QUICKSTART.md)** for details.
+
+---
+
+## 📊 Admin Dashboard
+
+Modern web-based admin interface for monitoring and managing the AI Gateway.
+
+### Access Dashboard
+```
+http://localhost:5173
+```
+
+### Features
+
+**8 Main Pages:**
+
+1. **📈 Dashboard** - Real-time system monitoring
+   - Total requests, costs, tokens, latency
+   - Layer status (L0-L3)
+   - Service health (Database, Redis, Providers)
+   - Auto-refresh every 5 seconds
+
+2. **📊 Analytics** - Deep insights and trends
+   - Time-series charts (1h/24h/7d/30d)
+   - Model usage breakdown
+   - Cost analysis by layer
+   - Error tracking
+   - Performance metrics with trends
+
+3. **🔑 Gateway Tokens** - API token management
+   - Create/delete tokens
+   - Show/hide token values
+   - Copy to clipboard
+   - Usage examples
+
+4. **📦 Docker Logs** - Real-time log viewer
+   - Container filtering
+   - Search and filter
+   - Pause/resume streaming
+   - Download logs
+   - Color-coded log levels
+
+5. **🌐 Providers** - Provider management
+   - Enable/disable providers
+   - Configure API keys
+   - Set base URLs
+   - Health monitoring
+   - Save configurations
+
+6. **🤖 Models** - Layer and model management
+   - Enable/disable layers (L0-L3)
+   - Add/remove models dynamically
+   - Edit mode with inline forms
+   - Real-time feedback
+
+7. **🔔 Alerts** - Alert system
+   - Create custom alerts (cost, latency, errors, uptime)
+   - Multi-channel notifications (Email, Slack, Webhook)
+   - Enable/disable alerts
+   - Flexible conditions
+
+8. **⚙️ Settings** - System configuration
+   - General settings (log level, default layer)
+   - Routing features (cross-check, auto-escalate)
+   - Cost management
+   - Layer control
+   - Task-specific models
+
+### Tech Stack
+- React 19.2.0 + TypeScript 5.9.3
+- Vite 7.2.5 (Rolldown)
+- Tailwind CSS 3.4.0
+- React Router 7
+- Axios + Lucide React
+
+See **[admin-dashboard/FEATURES.md](admin-dashboard/FEATURES.md)** for complete documentation.
 
 ### Option 2: Local Development
 

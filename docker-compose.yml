@@ -158,6 +158,27 @@ services:
     #           count: 1
     #           capabilities: [gpu]
 
+  # Admin Dashboard (Web UI)
+  admin-dashboard:
+    build:
+      context: ./admin-dashboard
+      dockerfile: Dockerfile
+    container_name: ai-mcp-dashboard
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - ai-mcp-gateway
+    networks:
+      - ai-mcp-network
+    environment:
+      - VITE_API_URL=http://localhost:3000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 networks:
   ai-mcp-network:
     driver: bridge

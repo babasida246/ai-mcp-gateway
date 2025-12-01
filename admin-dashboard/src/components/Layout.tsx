@@ -1,57 +1,56 @@
-import { Link, useLocation } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  Key,
-  Terminal,
-  Settings,
-  Users,
-  Cpu,
-  Menu,
-  X
-} from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { LayoutDashboard, Key, Terminal, Users, Cpu, Settings as SettingsIcon, Menu, X, BarChart3, Bell } from 'lucide-react';
+
+interface LayoutProps {
+  children: ReactNode;
+}
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Gateway Tokens', href: '/gateway-tokens', icon: Key },
+  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+  { name: 'Gateway Tokens', href: '/tokens', icon: Key },
   { name: 'Docker Logs', href: '/logs', icon: Terminal },
   { name: 'Providers', href: '/providers', icon: Users },
   { name: 'Models', href: '/models', icon: Cpu },
-  { name: 'Settings', href: '/settings', icon: Settings },
+  { name: 'Alerts', href: '/alerts', icon: Bell },
+  { name: 'Settings', href: '/settings', icon: SettingsIcon },
 ];
 
-export default function Layout({ children }: { children: React.ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-slate-900">
-      {/* Mobile sidebar */}
-      <div className={`fixed inset-0 z-50 lg:hidden ${sidebarOpen ? 'block' : 'hidden'}`}>
-        <div className="fixed inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
+      {/* Mobile menu */}
+      <div className={`fixed inset-0 z-50 lg:hidden ${mobileMenuOpen ? '' : 'hidden'}`}>
+        <div className="fixed inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)}></div>
         <div className="fixed left-0 top-0 bottom-0 w-64 bg-slate-800 shadow-xl">
           <div className="flex items-center justify-between p-4 border-b border-slate-700">
             <h2 className="text-lg font-semibold text-white">AI MCP Gateway</h2>
-            <button onClick={() => setSidebarOpen(false)} className="text-slate-400 hover:text-white">
+            <button onClick={() => setMobileMenuOpen(false)} className="text-slate-400 hover:text-white">
               <X className="w-6 h-6" />
             </button>
           </div>
           <nav className="p-4">
             <ul className="space-y-2">
               {navigation.map((item) => {
+                const Icon = item.icon;
                 const isActive = location.pathname === item.href;
                 return (
                   <li key={item.name}>
                     <Link
                       to={item.href}
+                      onClick={() => setMobileMenuOpen(false)}
                       className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
                         isActive
                           ? 'bg-blue-600 text-white'
                           : 'text-slate-300 hover:bg-slate-700 hover:text-white'
                       }`}
-                      onClick={() => setSidebarOpen(false)}
                     >
-                      <item.icon className="w-5 h-5" />
+                      <Icon className="w-5 h-5" />
                       {item.name}
                     </Link>
                   </li>
@@ -71,6 +70,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <nav className="flex-1 p-4">
             <ul className="space-y-2">
               {navigation.map((item) => {
+                const Icon = item.icon;
                 const isActive = location.pathname === item.href;
                 return (
                   <li key={item.name}>
@@ -82,7 +82,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           : 'text-slate-300 hover:bg-slate-700 hover:text-white'
                       }`}
                     >
-                      <item.icon className="w-5 h-5" />
+                      <Icon className="w-5 h-5" />
                       {item.name}
                     </Link>
                   </li>
@@ -95,13 +95,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <div className="lg:pl-64">
+        {/* Mobile header */}
         <div className="sticky top-0 z-40 lg:hidden">
           <div className="flex items-center justify-between p-4 bg-slate-800 border-b border-slate-700">
             <h1 className="text-lg font-semibold text-white">AI MCP Gateway</h1>
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="text-slate-400 hover:text-white"
-            >
+            <button onClick={() => setMobileMenuOpen(true)} className="text-slate-400 hover:text-white">
               <Menu className="w-6 h-6" />
             </button>
           </div>
