@@ -4,9 +4,16 @@ import axios from 'axios';
 
 const API_BASE = 'http://localhost:3000';
 
+interface Model {
+  id: string;
+  provider: string;
+  apiModelName: string;
+  enabled: boolean;
+}
+
 interface Layer {
   enabled: boolean;
-  models: string[];
+  models: Model[];
   providers: string[];
 }
 
@@ -19,7 +26,7 @@ export default function Models() {
   const [, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingLayer, setEditingLayer] = useState<string | null>(null);
-  const [newModel, setNewModel] = useState('');
+  const [newModel, setNewModel] = useState({ provider: '', apiModelName: '' });
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,7 +35,7 @@ export default function Models() {
 
   async function loadLayers() {
     try {
-      const response = await axios.get(`${API_BASE}/health`);
+      const response = await axios.get(`${API_BASE}/v1/models/layers`);
       if (response.data.layers) {
         setLayers(response.data.layers);
       }
@@ -41,50 +48,78 @@ export default function Models() {
     }
   }
 
-  function toggleLayer(layerName: string) {
-    setLayers(prev => ({
-      ...prev,
-      [layerName]: {
-        ...prev[layerName],
-        enabled: !prev[layerName].enabled
-      }
-    }));
-    setSaveStatus(`Layer ${layerName} ${layers[layerName].enabled ? 'disabled' : 'enabled'}`);
-    setTimeout(() => setSaveStatus(null), 3000);
-  }
-
-  function addModel(layerName: string) {
-    if (!newModel.trim()) return;
-    
-    setLayers(prev => ({
-      ...prev,
-      [layerName]: {
-        ...prev[layerName],
-        models: [...prev[layerName].models, newModel.trim()]
-      }
-    }));
-    setNewModel('');
-    setSaveStatus(`Model ${newModel} added to ${layerName}`);
-    setTimeout(() => setSaveStatus(null), 3000);
-  }
-
-  function removeModel(layerName: string, model: string) {
-    if (confirm(`Remove model "${model}" from ${layerName}?`)) {
+  async function toggleLayer(layerName: string) {
+    try {
+      await axios.put(`${API_BASE}/v1/layers/${layerName}/toggle`, {
+        enabled: !layers[layerName].enabled
+      });
       setLayers(prev => ({
         ...prev,
         [layerName]: {
           ...prev[layerName],
-          models: prev[layerName].models.filter(m => m !== model)
+          enabled: !prev[layerName].enabled
         }
       }));
-      setSaveStatus(`Model ${model} removed from ${layerName}`);
+      setSaveStatus(`Layer ${layerName} ${layers[layerName].enabled ? 'disabled' : 'enabled'}`);
       setTimeout(() => setSaveStatus(null), 3000);
+    } catch (err) {
+      console.error('Failed to toggle layer:', err);
+      setError(err instanceof Error ? err.message : 'Failed to toggle layer');
+    }
+  }
+
+  async function addModel(layerName: string) {
+    if (!newModel.provider.trim() || !newModel.apiModelName.trim()) return;
+    
+    try {
+      const modelId = `${newModel.provider}-${newModel.apiModelName.replace(/\//g, '-')}`;
+      await axios.post(`${API_BASE}/v1/models`, {
+        id: modelId,
+        provider: newModel.provider,
+        apiModelName: newModel.apiModelName,
+        layer: layerName,
+        enabled: true
+      });
+      
+      setNewModel({ provider: '', apiModelName: '' });
+      setSaveStatus(`Model added to ${layerName}`);
+      setTimeout(() => setSaveStatus(null), 3000);
+      loadLayers(); // Reload to get updated data
+    } catch (err) {
+      console.error('Failed to add model:', err);
+      setError(err instanceof Error ? err.message : 'Failed to add model');
+    }
+  }
+
+  async function removeModel(layerName: string, modelId: string, modelName: string) {
+    if (confirm(`Remove model "${modelName}" from ${layerName}?`)) {
+      try {
+        await axios.delete(`${API_BASE}/v1/models/${modelId}`);
+        setSaveStatus(`Model ${modelName} removed from ${layerName}`);
+        setTimeout(() => setSaveStatus(null), 3000);
+        loadLayers(); // Reload to get updated data
+      } catch (err) {
+        console.error('Failed to remove model:', err);
+        setError(err instanceof Error ? err.message : 'Failed to remove model');
+      }
+    }
+  }
+
+  async function toggleModel(modelId: string, currentEnabled: boolean) {
+    try {
+      await axios.put(`${API_BASE}/v1/models/${modelId}`, {
+        enabled: !currentEnabled
+      });
+      loadLayers(); // Reload to get updated data
+    } catch (err) {
+      console.error('Failed to toggle model:', err);
+      setError(err instanceof Error ? err.message : 'Failed to toggle model');
     }
   }
 
   function cancelEditing() {
     setEditingLayer(null);
-    setNewModel('');
+    setNewModel({ provider: '', apiModelName: '' });
   }
 
   return (
@@ -200,29 +235,46 @@ export default function Models() {
               {isEditing && (
                 <div className="mb-4 p-4 bg-slate-700/30 rounded-lg border border-slate-600">
                   <h3 className="text-sm font-semibold text-white mb-3">Add New Model</h3>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={newModel}
-                      onChange={(e) => setNewModel(e.target.value)}
-                      placeholder="e.g., openrouter-gpt-4o"
-                      className="input flex-1"
-                      onKeyPress={(e) => e.key === 'Enter' && addModel(layerName)}
-                    />
-                    <button
-                      onClick={() => addModel(layerName)}
-                      disabled={!newModel.trim()}
-                      className="btn-primary flex items-center gap-2"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add
-                    </button>
-                    <button
-                      onClick={cancelEditing}
-                      className="btn-secondary"
-                    >
-                      Cancel
-                    </button>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">Provider</label>
+                        <input
+                          type="text"
+                          value={newModel.provider}
+                          onChange={(e) => setNewModel({ ...newModel, provider: e.target.value })}
+                          placeholder="e.g., openrouter"
+                          className="input w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">Model Name</label>
+                        <input
+                          type="text"
+                          value={newModel.apiModelName}
+                          onChange={(e) => setNewModel({ ...newModel, apiModelName: e.target.value })}
+                          placeholder="e.g., openai/gpt-4o"
+                          className="input w-full"
+                          onKeyPress={(e) => e.key === 'Enter' && addModel(layerName)}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => addModel(layerName)}
+                        disabled={!newModel.provider.trim() || !newModel.apiModelName.trim()}
+                        className="btn-primary flex items-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Model
+                      </button>
+                      <button
+                        onClick={cancelEditing}
+                        className="btn-secondary"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -233,22 +285,46 @@ export default function Models() {
                   <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">
                     Models ({layer.models.length})
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 gap-3">
                     {layer.models.map((model) => (
                       <div
-                        key={model}
-                        className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg border border-slate-600 hover:border-slate-500 transition-colors group"
+                        key={model.id}
+                        className="flex items-center justify-between p-4 bg-slate-700/50 rounded-lg border border-slate-600 hover:border-slate-500 transition-colors group"
                       >
-                        <span className="text-white font-medium text-sm flex-1 truncate">{model}</span>
-                        {isEditing && (
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-white font-semibold">{model.apiModelName}</span>
+                            <span className={`badge ${model.enabled ? 'badge-success' : 'badge-error'} text-xs`}>
+                              {model.enabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-slate-400">
+                            <span className="badge badge-info">{model.provider}</span>
+                            <span>ID: {model.id}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
                           <button
-                            onClick={() => removeModel(layerName, model)}
-                            className="ml-2 p-1 text-red-400 hover:bg-red-500/20 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Remove model"
+                            onClick={() => toggleModel(model.id, model.enabled)}
+                            className={`btn-secondary text-sm ${!model.enabled ? 'bg-green-500/20 text-green-400' : 'bg-orange-500/20 text-orange-400'}`}
+                            title={model.enabled ? 'Disable model' : 'Enable model'}
                           >
-                            <Trash2 className="w-4 h-4" />
+                            {model.enabled ? (
+                              <PowerOff className="w-4 h-4" />
+                            ) : (
+                              <Power className="w-4 h-4" />
+                            )}
                           </button>
-                        )}
+                          {isEditing && (
+                            <button
+                              onClick={() => removeModel(layerName, model.id, model.apiModelName)}
+                              className="p-2 text-red-400 hover:bg-red-500/20 rounded transition-opacity"
+                              title="Remove model"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>

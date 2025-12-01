@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, XCircle, RefreshCw, AlertCircle, Power, PowerOff, Settings, Eye, EyeOff, Save } from 'lucide-react';
+import { CheckCircle2, XCircle, RefreshCw, AlertCircle, Power, PowerOff, Settings, Eye, EyeOff, Save, Plus, Trash2, X } from 'lucide-react';
 import axios from 'axios';
 
 const API_BASE = 'http://localhost:3000';
@@ -18,12 +18,14 @@ interface HealthData {
 }
 
 interface ProviderConfig {
+  id: string;
   name: string;
-  key: string;
   description: string;
   apiKey: string;
   enabled: boolean;
   baseUrl?: string;
+  isDefault: boolean;
+  apiFunction?: string;
 }
 
 export default function Providers() {
@@ -33,24 +35,27 @@ export default function Providers() {
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
-
-  const [providerConfigs, setProviderConfigs] = useState<ProviderConfig[]>([
-    { name: 'OpenAI', key: 'openai', description: 'GPT models (GPT-4, GPT-4-turbo, GPT-3.5)', apiKey: 'sk-...', enabled: true },
-    { name: 'Anthropic', key: 'anthropic', description: 'Claude models (Claude 3.5 Sonnet, Haiku, Opus)', apiKey: 'sk-ant-...', enabled: true },
-    { name: 'OpenRouter', key: 'openrouter', description: 'Multi-provider API gateway', apiKey: 'sk-or-...', enabled: true, baseUrl: 'https://openrouter.ai/api/v1' },
-    { name: 'OSS Local', key: 'oss-local', description: 'Self-hosted open-source models', apiKey: '', enabled: false, baseUrl: 'http://localhost:8000' },
-  ]);
+  const [providerConfigs, setProviderConfigs] = useState<ProviderConfig[]>([]);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newProvider, setNewProvider] = useState<Partial<ProviderConfig>>({
+    id: '',
+    name: '',
+    description: '',
+    apiKey: '',
+    baseUrl: '',
+    apiFunction: '',
+  });
 
   useEffect(() => {
     loadProviders();
-    const interval = setInterval(loadProviders, 10000);
+    const interval = setInterval(loadHealth, 10000);
     return () => clearInterval(interval);
   }, []);
 
   async function loadProviders() {
     try {
-      const response = await axios.get(`${API_BASE}/health`);
-      setHealth(response.data);
+      const response = await axios.get(`${API_BASE}/v1/providers`);
+      setProviderConfigs(response.data.providers);
       setError(null);
       setLoading(false);
     } catch (err) {
@@ -60,35 +65,104 @@ export default function Providers() {
     }
   }
 
-  function toggleProvider(key: string) {
+  async function loadHealth() {
+    try {
+      const response = await axios.get(`${API_BASE}/health`);
+      setHealth(response.data);
+    } catch (err) {
+      console.error('Failed to load health:', err);
+    }
+  }
+
+  async function toggleProvider(id: string) {
+    const provider = providerConfigs.find(p => p.id === id);
+    if (!provider) return;
+
+    try {
+      await axios.put(`${API_BASE}/v1/providers/${id}`, {
+        enabled: !provider.enabled
+      });
+      
+      setProviderConfigs(configs =>
+        configs.map(p => p.id === id ? { ...p, enabled: !p.enabled } : p)
+      );
+      setSaveStatus(`Provider ${id} ${provider.enabled ? 'disabled' : 'enabled'}`);
+      setTimeout(() => setSaveStatus(null), 3000);
+    } catch (err) {
+      console.error('Failed to toggle provider:', err);
+      setError(err instanceof Error ? err.message : 'Failed to toggle provider');
+    }
+  }
+
+  async function saveProviderConfig(id: string) {
+    const provider = providerConfigs.find(p => p.id === id);
+    if (!provider) return;
+
+    try {
+      await axios.put(`${API_BASE}/v1/providers/${id}`, {
+        apiKey: provider.apiKey,
+        baseUrl: provider.baseUrl,
+      });
+      
+      setSaveStatus(`Configuration saved for ${id}`);
+      setEditingProvider(null);
+      setTimeout(() => setSaveStatus(null), 3000);
+    } catch (err) {
+      console.error('Failed to save provider config:', err);
+      setError(err instanceof Error ? err.message : 'Failed to save provider configuration');
+    }
+  }
+
+  async function addCustomProvider() {
+    if (!newProvider.id || !newProvider.name || !newProvider.baseUrl) {
+      setError('Please fill in all required fields (ID, Name, Base URL)');
+      return;
+    }
+
+    try {
+      await axios.post(`${API_BASE}/v1/providers`, newProvider);
+      
+      setSaveStatus(`Custom provider ${newProvider.name} added successfully`);
+      setShowAddForm(false);
+      setNewProvider({
+        id: '',
+        name: '',
+        description: '',
+        apiKey: '',
+        baseUrl: '',
+        apiFunction: '',
+      });
+      setTimeout(() => setSaveStatus(null), 3000);
+      loadProviders(); // Reload providers
+    } catch (err) {
+      console.error('Failed to add provider:', err);
+      setError(err instanceof Error ? err.message : 'Failed to add custom provider');
+    }
+  }
+
+  async function deleteProvider(id: string) {
+    if (!confirm(`Are you sure you want to delete provider "${id}"?`)) return;
+
+    try {
+      await axios.delete(`${API_BASE}/v1/providers/${id}`);
+      
+      setSaveStatus(`Provider ${id} deleted successfully`);
+      setTimeout(() => setSaveStatus(null), 3000);
+      loadProviders(); // Reload providers
+    } catch (err) {
+      console.error('Failed to delete provider:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete provider');
+    }
+  }
+
+  function updateProviderField(id: string, field: keyof ProviderConfig, value: string | boolean) {
     setProviderConfigs(configs =>
-      configs.map(p => p.key === key ? { ...p, enabled: !p.enabled } : p)
-    );
-    setSaveStatus(`Provider ${key} ${providerConfigs.find(p => p.key === key)?.enabled ? 'disabled' : 'enabled'}`);
-    setTimeout(() => setSaveStatus(null), 3000);
-  }
-
-  function updateApiKey(key: string, apiKey: string) {
-    setProviderConfigs(configs =>
-      configs.map(p => p.key === key ? { ...p, apiKey } : p)
+      configs.map(p => p.id === id ? { ...p, [field]: value } : p)
     );
   }
 
-  function updateBaseUrl(key: string, baseUrl: string) {
-    setProviderConfigs(configs =>
-      configs.map(p => p.key === key ? { ...p, baseUrl } : p)
-    );
-  }
-
-  function saveProviderConfig(key: string) {
-    // In real implementation: POST to API endpoint
-    setSaveStatus(`Configuration saved for ${key}`);
-    setEditingProvider(null);
-    setTimeout(() => setSaveStatus(null), 3000);
-  }
-
-  function toggleApiKeyVisibility(key: string) {
-    setShowApiKeys(prev => ({ ...prev, [key]: !prev[key] }));
+  function toggleApiKeyVisibility(id: string) {
+    setShowApiKeys(prev => ({ ...prev, [id]: !prev[id] }));
   }
 
   return (
@@ -102,7 +176,11 @@ export default function Providers() {
               {saveStatus}
             </div>
           )}
-          <button onClick={loadProviders} className="btn-secondary flex items-center gap-2">
+          <button onClick={() => setShowAddForm(true)} className="btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" />
+            Add Custom Provider
+          </button>
+          <button onClick={() => { loadProviders(); loadHealth(); }} className="btn-secondary flex items-center gap-2">
             <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
@@ -117,9 +195,105 @@ export default function Providers() {
               <h3 className="text-red-400 font-semibold">Error</h3>
               <p className="text-red-300 text-sm mt-1">{error}</p>
             </div>
-            <button onClick={loadProviders} className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-md transition-colors">
-              Retry
+            <button onClick={() => setError(null)} className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-md transition-colors">
+              Dismiss
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Add Custom Provider Form */}
+      {showAddForm && (
+        <div className="card p-6 border-2 border-blue-500/50">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-white">Add Custom Provider</h2>
+            <button onClick={() => setShowAddForm(false)} className="btn-secondary">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                  Provider ID <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newProvider.id || ''}
+                  onChange={(e) => setNewProvider({ ...newProvider, id: e.target.value })}
+                  className="input w-full"
+                  placeholder="e.g., custom-llm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                  Provider Name <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newProvider.name || ''}
+                  onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })}
+                  className="input w-full"
+                  placeholder="e.g., Custom LLM Provider"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-2">
+                Description
+              </label>
+              <input
+                type="text"
+                value={newProvider.description || ''}
+                onChange={(e) => setNewProvider({ ...newProvider, description: e.target.value })}
+                className="input w-full"
+                placeholder="Provider description"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-2">
+                Base URL <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="text"
+                value={newProvider.baseUrl || ''}
+                onChange={(e) => setNewProvider({ ...newProvider, baseUrl: e.target.value })}
+                className="input w-full font-mono text-sm"
+                placeholder="https://api.example.com/v1"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-2">
+                API Key (optional)
+              </label>
+              <input
+                type="password"
+                value={newProvider.apiKey || ''}
+                onChange={(e) => setNewProvider({ ...newProvider, apiKey: e.target.value })}
+                className="input w-full font-mono text-sm"
+                placeholder="API key if required"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-2">
+                API Function (JavaScript code to call the provider)
+              </label>
+              <textarea
+                value={newProvider.apiFunction || ''}
+                onChange={(e) => setNewProvider({ ...newProvider, apiFunction: e.target.value })}
+                className="input w-full font-mono text-xs h-32 resize-y"
+                placeholder={`async function callProvider(messages, options) {\n  // Your custom API call logic here\n  const response = await fetch(baseUrl, {\n    method: 'POST',\n    headers: { 'Authorization': \`Bearer \${apiKey}\` },\n    body: JSON.stringify({ messages })\n  });\n  return response.json();\n}`}
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={addCustomProvider} className="btn-primary flex items-center gap-2">
+                <Plus className="w-4 h-4" />
+                Add Provider
+              </button>
+              <button onClick={() => setShowAddForm(false)} className="btn-secondary">
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -154,28 +328,30 @@ export default function Providers() {
       {/* Provider Cards */}
       <div className="grid grid-cols-1 gap-6">
         {providerConfigs.map((provider) => {
-          const isHealthy = health?.providers[provider.key as keyof ProviderStatus];
-          const isEditing = editingProvider === provider.key;
+          const isHealthy = health?.providers[provider.id as keyof ProviderStatus];
+          const isEditing = editingProvider === provider.id;
           
           return (
-            <div key={provider.key} className="card p-6">
+            <div key={provider.id} className="card p-6">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h3 className="text-xl font-bold text-white">{provider.name}</h3>
-                    <div className={`badge ${isHealthy ? 'badge-success' : 'badge-error'}`}>
-                      {isHealthy ? (
-                        <>
-                          <CheckCircle2 className="w-3 h-3 mr-1" />
-                          Healthy
-                        </>
-                      ) : (
-                        <>
-                          <XCircle className="w-3 h-3 mr-1" />
-                          Unhealthy
-                        </>
-                      )}
-                    </div>
+                    {isHealthy !== undefined && (
+                      <div className={`badge ${isHealthy ? 'badge-success' : 'badge-error'}`}>
+                        {isHealthy ? (
+                          <>
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            Healthy
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="w-3 h-3 mr-1" />
+                            Unhealthy
+                          </>
+                        )}
+                      </div>
+                    )}
                     <div className={`badge ${provider.enabled ? 'badge-success' : 'badge-error'}`}>
                       {provider.enabled ? (
                         <>
@@ -189,12 +365,15 @@ export default function Providers() {
                         </>
                       )}
                     </div>
+                    {!provider.isDefault && (
+                      <span className="badge badge-info text-xs">Custom</span>
+                    )}
                   </div>
                   <p className="text-sm text-slate-400">{provider.description}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => toggleProvider(provider.key)}
+                    onClick={() => toggleProvider(provider.id)}
                     className={`btn-secondary ${!provider.enabled ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}
                   >
                     {provider.enabled ? (
@@ -210,11 +389,19 @@ export default function Providers() {
                     )}
                   </button>
                   <button
-                    onClick={() => setEditingProvider(isEditing ? null : provider.key)}
+                    onClick={() => setEditingProvider(isEditing ? null : provider.id)}
                     className="btn-secondary"
                   >
                     <Settings className="w-4 h-4" />
                   </button>
+                  {!provider.isDefault && (
+                    <button
+                      onClick={() => deleteProvider(provider.id)}
+                      className="btn-secondary bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -226,17 +413,17 @@ export default function Providers() {
                     </label>
                     <div className="flex items-center gap-2">
                       <input
-                        type={showApiKeys[provider.key] ? 'text' : 'password'}
+                        type={showApiKeys[provider.id] ? 'text' : 'password'}
                         value={provider.apiKey}
-                        onChange={(e) => updateApiKey(provider.key, e.target.value)}
+                        onChange={(e) => updateProviderField(provider.id, 'apiKey', e.target.value)}
                         className="input flex-1 font-mono text-sm"
                         placeholder="Enter API key..."
                       />
                       <button
-                        onClick={() => toggleApiKeyVisibility(provider.key)}
+                        onClick={() => toggleApiKeyVisibility(provider.id)}
                         className="btn-secondary px-3"
                       >
-                        {showApiKeys[provider.key] ? (
+                        {showApiKeys[provider.id] ? (
                           <EyeOff className="w-4 h-4" />
                         ) : (
                           <Eye className="w-4 h-4" />
@@ -253,16 +440,30 @@ export default function Providers() {
                       <input
                         type="text"
                         value={provider.baseUrl}
-                        onChange={(e) => updateBaseUrl(provider.key, e.target.value)}
+                        onChange={(e) => updateProviderField(provider.id, 'baseUrl', e.target.value)}
                         className="input w-full font-mono text-sm"
                         placeholder="https://api.example.com"
                       />
                     </div>
                   )}
 
+                  {!provider.isDefault && provider.apiFunction !== undefined && (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-300 mb-2">
+                        API Function
+                      </label>
+                      <textarea
+                        value={provider.apiFunction}
+                        onChange={(e) => updateProviderField(provider.id, 'apiFunction', e.target.value)}
+                        className="input w-full font-mono text-xs h-32 resize-y"
+                        placeholder="async function callProvider(messages, options) { ... }"
+                      />
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => saveProviderConfig(provider.key)}
+                      onClick={() => saveProviderConfig(provider.id)}
                       className="btn-primary flex items-center gap-2"
                     >
                       <Save className="w-4 h-4" />

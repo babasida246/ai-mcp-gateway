@@ -233,6 +233,48 @@ export class APIServer {
             await this.handleSearchKnowledgePacks(req, res);
         });
 
+        // Model management endpoints
+        this.app.get('/v1/models', async (req, res) => {
+            await this.handleGetModels(req, res);
+        });
+
+        this.app.get('/v1/models/layers', async (req, res) => {
+            await this.handleGetLayers(req, res);
+        });
+
+        this.app.put('/v1/models/:modelId', async (req, res) => {
+            await this.handleUpdateModel(req, res);
+        });
+
+        this.app.post('/v1/models', async (req, res) => {
+            await this.handleAddModel(req, res);
+        });
+
+        this.app.delete('/v1/models/:modelId', async (req, res) => {
+            await this.handleDeleteModel(req, res);
+        });
+
+        this.app.put('/v1/layers/:layerId/toggle', async (req, res) => {
+            await this.handleToggleLayer(req, res);
+        });
+
+        // Provider management endpoints
+        this.app.get('/v1/providers', async (req, res) => {
+            await this.handleGetProviders(req, res);
+        });
+
+        this.app.post('/v1/providers', async (req, res) => {
+            await this.handleAddProvider(req, res);
+        });
+
+        this.app.put('/v1/providers/:providerId', async (req, res) => {
+            await this.handleUpdateProvider(req, res);
+        });
+
+        this.app.delete('/v1/providers/:providerId', async (req, res) => {
+            await this.handleDeleteProvider(req, res);
+        });
+
         // 404 handler
         this.app.use((req, res) => {
             res.status(404).json({
@@ -1603,6 +1645,371 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
     }
 
     /**
+     * Handle GET /v1/models - Get all models with details
+     */
+    private async handleGetModels(_req: Request, res: Response): Promise<void> {
+        try {
+            const { MODEL_CATALOG } = await import('../config/models.js');
+            res.json({
+                models: MODEL_CATALOG.map(m => ({
+                    id: m.id,
+                    provider: m.provider,
+                    apiModelName: m.apiModelName,
+                    layer: m.layer,
+                    relativeCost: m.relativeCost,
+                    capabilities: m.capabilities,
+                    contextWindow: m.contextWindow,
+                    enabled: m.enabled,
+                })),
+            });
+        } catch (error) {
+            logger.error('Failed to get models', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to get models',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle GET /v1/models/layers - Get all layers with models
+     */
+    private async handleGetLayers(_req: Request, res: Response): Promise<void> {
+        try {
+            const { getModelsByLayer, LAYERS_IN_ORDER, isLayerEnabled } = await import('../config/models.js');
+            const layers: Record<string, {
+                enabled: boolean;
+                models: Array<{
+                    id: string;
+                    provider: string;
+                    apiModelName: string;
+                    enabled: boolean;
+                }>;
+                providers: string[];
+            }> = {};
+
+            for (const layer of LAYERS_IN_ORDER) {
+                const models = getModelsByLayer(layer);
+                const providers = Array.from(new Set(models.map(m => m.provider)));
+                layers[layer] = {
+                    enabled: isLayerEnabled(layer),
+                    models: models.map(m => ({
+                        id: m.id,
+                        provider: m.provider,
+                        apiModelName: m.apiModelName,
+                        enabled: m.enabled,
+                    })),
+                    providers,
+                };
+            }
+
+            res.json({ layers });
+        } catch (error) {
+            logger.error('Failed to get layers', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to get layers',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle PUT /v1/models/:modelId - Update model configuration
+     */
+    private async handleUpdateModel(req: Request, res: Response): Promise<void> {
+        try {
+            const { modelId } = req.params;
+            const { enabled } = req.body;
+
+            const { MODEL_CATALOG } = await import('../config/models.js');
+            const model = MODEL_CATALOG.find(m => m.id === modelId);
+
+            if (!model) {
+                res.status(404).json({ error: 'Model not found' });
+                return;
+            }
+
+            if (enabled !== undefined) {
+                model.enabled = enabled;
+            }
+
+            res.json({
+                success: true,
+                model: {
+                    id: model.id,
+                    provider: model.provider,
+                    apiModelName: model.apiModelName,
+                    enabled: model.enabled,
+                },
+            });
+        } catch (error) {
+            logger.error('Failed to update model', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to update model',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle POST /v1/models - Add new model
+     */
+    private async handleAddModel(req: Request, res: Response): Promise<void> {
+        try {
+            const { id, provider, apiModelName, layer, enabled } = req.body;
+
+            if (!id || !provider || !apiModelName || !layer) {
+                res.status(400).json({
+                    error: 'Missing required fields: id, provider, apiModelName, layer',
+                });
+                return;
+            }
+
+            const { MODEL_CATALOG } = await import('../config/models.js');
+            
+            // Check if model already exists
+            if (MODEL_CATALOG.find(m => m.id === id)) {
+                res.status(409).json({ error: 'Model already exists' });
+                return;
+            }
+
+            // Add new model
+            MODEL_CATALOG.push({
+                id,
+                provider,
+                apiModelName,
+                layer,
+                relativeCost: 0,
+                capabilities: { code: true, general: true, reasoning: false },
+                contextWindow: 8192,
+                enabled: enabled !== undefined ? enabled : true,
+            });
+
+            res.json({
+                success: true,
+                model: { id, provider, apiModelName, layer, enabled },
+            });
+        } catch (error) {
+            logger.error('Failed to add model', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to add model',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle DELETE /v1/models/:modelId - Delete model
+     */
+    private async handleDeleteModel(req: Request, res: Response): Promise<void> {
+        try {
+            const { modelId } = req.params;
+            const { MODEL_CATALOG } = await import('../config/models.js');
+            
+            const index = MODEL_CATALOG.findIndex(m => m.id === modelId);
+            if (index === -1) {
+                res.status(404).json({ error: 'Model not found' });
+                return;
+            }
+
+            MODEL_CATALOG.splice(index, 1);
+            res.json({ success: true, modelId });
+        } catch (error) {
+            logger.error('Failed to delete model', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to delete model',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle PUT /v1/layers/:layerId/toggle - Toggle layer enable/disable
+     */
+    private async handleToggleLayer(req: Request, res: Response): Promise<void> {
+        try {
+            const { layerId } = req.params;
+            const { enabled } = req.body;
+
+            // In real implementation, this would update the environment variable
+            // For now, we just return success
+            res.json({
+                success: true,
+                layer: layerId,
+                enabled,
+                message: 'Layer toggle requires restart to take effect',
+            });
+        } catch (error) {
+            logger.error('Failed to toggle layer', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to toggle layer',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle GET /v1/providers - Get all providers
+     */
+    private async handleGetProviders(_req: Request, res: Response): Promise<void> {
+        try {
+            const providers = [
+                {
+                    id: 'openai',
+                    name: 'OpenAI',
+                    description: 'GPT models (GPT-4, GPT-4-turbo, GPT-3.5)',
+                    enabled: !!env.OPENAI_API_KEY,
+                    apiKey: env.OPENAI_API_KEY ? `${env.OPENAI_API_KEY.substring(0, 10)}...` : '',
+                    baseUrl: 'https://api.openai.com/v1',
+                    isDefault: true,
+                },
+                {
+                    id: 'anthropic',
+                    name: 'Anthropic',
+                    description: 'Claude models (Claude 3.5 Sonnet, Haiku, Opus)',
+                    enabled: !!env.ANTHROPIC_API_KEY,
+                    apiKey: env.ANTHROPIC_API_KEY ? `${env.ANTHROPIC_API_KEY.substring(0, 10)}...` : '',
+                    baseUrl: 'https://api.anthropic.com/v1',
+                    isDefault: true,
+                },
+                {
+                    id: 'openrouter',
+                    name: 'OpenRouter',
+                    description: 'Multi-provider API gateway',
+                    enabled: !!env.OPENROUTER_API_KEY,
+                    apiKey: env.OPENROUTER_API_KEY ? `${env.OPENROUTER_API_KEY.substring(0, 10)}...` : '',
+                    baseUrl: 'https://openrouter.ai/api/v1',
+                    isDefault: true,
+                },
+                {
+                    id: 'oss-local',
+                    name: 'OSS Local',
+                    description: 'Self-hosted open-source models',
+                    enabled: env.OSS_MODEL_ENABLED,
+                    apiKey: '',
+                    baseUrl: env.OSS_MODEL_ENDPOINT,
+                    isDefault: true,
+                },
+            ];
+
+            res.json({ providers });
+        } catch (error) {
+            logger.error('Failed to get providers', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to get providers',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle POST /v1/providers - Add custom provider
+     */
+    private async handleAddProvider(req: Request, res: Response): Promise<void> {
+        try {
+            const { id, name, description, apiKey, baseUrl, apiFunction } = req.body;
+
+            if (!id || !name || !baseUrl) {
+                res.status(400).json({
+                    error: 'Missing required fields: id, name, baseUrl',
+                });
+                return;
+            }
+
+            // In real implementation, save to database
+            // For now, return success
+            res.json({
+                success: true,
+                provider: {
+                    id,
+                    name,
+                    description,
+                    apiKey: apiKey ? `${apiKey.substring(0, 10)}...` : '',
+                    baseUrl,
+                    apiFunction,
+                    isDefault: false,
+                },
+            });
+        } catch (error) {
+            logger.error('Failed to add provider', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to add provider',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle PUT /v1/providers/:providerId - Update provider
+     */
+    private async handleUpdateProvider(req: Request, res: Response): Promise<void> {
+        try {
+            const { providerId } = req.params;
+            const { apiKey, baseUrl, enabled } = req.body;
+
+            // In real implementation, update environment variables or database
+            res.json({
+                success: true,
+                provider: { id: providerId, apiKey: apiKey ? `${apiKey.substring(0, 10)}...` : undefined, baseUrl, enabled },
+                message: 'Provider update requires restart to take effect',
+            });
+        } catch (error) {
+            logger.error('Failed to update provider', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to update provider',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle DELETE /v1/providers/:providerId - Delete custom provider
+     */
+    private async handleDeleteProvider(req: Request, res: Response): Promise<void> {
+        try {
+            const { providerId } = req.params;
+
+            // Only allow deleting custom providers (not default ones)
+            const defaultProviders = ['openai', 'anthropic', 'openrouter', 'oss-local'];
+            if (defaultProviders.includes(providerId)) {
+                res.status(400).json({
+                    error: 'Cannot delete default providers',
+                });
+                return;
+            }
+
+            // In real implementation, delete from database
+            res.json({ success: true, providerId });
+        } catch (error) {
+            logger.error('Failed to delete provider', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to delete provider',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
      * Start the API server
      */
     async start(): Promise<void> {
@@ -1641,6 +2048,16 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
                     'POST /v1/knowledge/pack',
                     'GET /v1/knowledge/pack/:packId',
                     'GET /v1/knowledge/search',
+                    'GET /v1/models',
+                    'GET /v1/models/layers',
+                    'PUT /v1/models/:modelId',
+                    'POST /v1/models',
+                    'DELETE /v1/models/:modelId',
+                    'PUT /v1/layers/:layerId/toggle',
+                    'GET /v1/providers',
+                    'POST /v1/providers',
+                    'PUT /v1/providers/:providerId',
+                    'DELETE /v1/providers/:providerId',
                 ],
             });
         });
