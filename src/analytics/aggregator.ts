@@ -12,7 +12,7 @@ import type {
 } from '../types/tracing.js';
 
 export class AnalyticsAggregator {
-    constructor(private db: Pool) {}
+    constructor(private db: Pool) { }
 
     async getAnalytics(
         query: AnalyticsQuery,
@@ -176,8 +176,8 @@ export class AnalyticsAggregator {
             groupBy === 'day'
                 ? 'YYYY-MM-DD'
                 : groupBy === 'week'
-                  ? 'YYYY-"W"IW'
-                  : 'YYYY-MM';
+                    ? 'YYYY-"W"IW'
+                    : 'YYYY-MM';
 
         const query = `
             SELECT

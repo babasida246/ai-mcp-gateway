@@ -7,6 +7,7 @@ import { routeRequest, detectComplexity } from '../routing/router.js';
 import { db } from '../db/postgres.js';
 import { redisCache } from '../cache/redis.js';
 import { providerHealth } from '../config/provider-health.js';
+import { SemanticSearch, KnowledgePackManager } from '../search/semantic.js';
 import type { TaskType } from '../mcp/types.js';
 
 /**
@@ -206,6 +207,32 @@ export class APIServer {
             await this.handleGetTrace(req, res);
         });
 
+        // Semantic search endpoints (Phase 4)
+        this.app.post('/v1/search/code', async (req, res) => {
+            await this.handleSemanticSearch(req, res);
+        });
+
+        this.app.post('/v1/search/index', async (req, res) => {
+            await this.handleIndexCode(req, res);
+        });
+
+        this.app.get('/v1/search/stats', async (req, res) => {
+            await this.handleSearchStats(req, res);
+        });
+
+        // Knowledge pack endpoints (Phase 4)
+        this.app.post('/v1/knowledge/pack', async (req, res) => {
+            await this.handleCreateKnowledgePack(req, res);
+        });
+
+        this.app.get('/v1/knowledge/pack/:packId', async (req, res) => {
+            await this.handleLoadKnowledgePack(req, res);
+        });
+
+        this.app.get('/v1/knowledge/search', async (req, res) => {
+            await this.handleSearchKnowledgePacks(req, res);
+        });
+
         // 404 handler
         this.app.use((req, res) => {
             res.status(404).json({
@@ -213,6 +240,82 @@ export class APIServer {
                 path: req.path,
             });
         });
+    }
+
+    /**
+     * Check quota before processing request
+     */
+    private async checkQuotaForRequest(
+        userId: string,
+        projectId: string,
+        estimatedTokens: number,
+        estimatedCost: number,
+    ): Promise<{ allowed: boolean; error?: { status: number; body: unknown } }> {
+        if (!db.isReady()) {
+            // Skip quota check if database unavailable
+            return { allowed: true };
+        }
+
+        try {
+            const { QuotaEnforcer } = await import('../quota/enforcer.js');
+            const enforcer = new QuotaEnforcer(db.getPool());
+
+            const quotaCheck = await enforcer.checkQuota(
+                userId || 'anonymous',
+                projectId || 'default-project',
+                estimatedTokens,
+                estimatedCost,
+            );
+
+            if (!quotaCheck.allowed) {
+                return {
+                    allowed: false,
+                    error: {
+                        status: 429,
+                        body: {
+                            error: 'Quota exceeded',
+                            details: quotaCheck.reason,
+                            remaining: quotaCheck.remaining,
+                            resetAt: quotaCheck.resetAt,
+                        },
+                    },
+                };
+            }
+
+            return { allowed: true };
+        } catch (error) {
+            logger.warn('Quota check failed, allowing request', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            return { allowed: true };
+        }
+    }
+
+    /**
+     * Increment quota after successful request
+     */
+    private async incrementQuotaAfterRequest(
+        userId: string,
+        projectId: string,
+        tokens: number,
+        cost: number,
+    ): Promise<void> {
+        if (!db.isReady()) return;
+
+        try {
+            const { QuotaEnforcer } = await import('../quota/enforcer.js');
+            const enforcer = new QuotaEnforcer(db.getPool());
+            await enforcer.incrementQuota(
+                userId || 'anonymous',
+                projectId || 'default-project',
+                tokens,
+                cost,
+            );
+        } catch (error) {
+            logger.error('Failed to increment quota', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+        }
     }
 
     /**
@@ -245,6 +348,19 @@ export class APIServer {
 
             // Ensure conversation context is loaded
             await contextManager.getSummary(conversationId);
+
+            // Check quota before routing (estimate: 1000 tokens, $0.01)
+            const quotaCheck = await this.checkQuotaForRequest(
+                userId,
+                projectId,
+                1000,
+                0.01,
+            );
+
+            if (!quotaCheck.allowed && quotaCheck.error) {
+                res.status(quotaCheck.error.status).json(quotaCheck.error.body);
+                return;
+            }
 
             // Route request
             const result = await routeRequest(
@@ -282,6 +398,14 @@ export class APIServer {
                 duration_ms: Date.now() - startTime,
                 success: true,
             });
+
+            // Increment quota after successful request
+            await this.incrementQuotaAfterRequest(
+                userId,
+                projectId,
+                result.inputTokens + result.outputTokens,
+                result.cost,
+            );
 
             res.json({
                 result: {
@@ -343,6 +467,19 @@ export class APIServer {
             // Get context
             const summary = await contextManager.getSummary(conversationId);
 
+            // Check quota before routing (code tasks estimate: 2000 tokens, $0.02)
+            const quotaCheck = await this.checkQuotaForRequest(
+                userId,
+                projectId,
+                2000,
+                0.02,
+            );
+
+            if (!quotaCheck.allowed && quotaCheck.error) {
+                res.status(quotaCheck.error.status).json(quotaCheck.error.body);
+                return;
+            }
+
             // Build prompt for code agent
             const prompt = `Task: ${task}\n\nFiles: ${files ? JSON.stringify(files) : 'N/A'}\n\nContext: ${summary ? JSON.stringify(summary) : 'New conversation'}`;
 
@@ -371,6 +508,14 @@ export class APIServer {
                     modelUsed: result.modelId,
                 },
             });
+
+            // Increment quota after successful request
+            await this.incrementQuotaAfterRequest(
+                userId,
+                projectId,
+                result.inputTokens + result.outputTokens,
+                result.cost,
+            );
 
             res.json({
                 result: {
@@ -431,6 +576,19 @@ export class APIServer {
                 ? `${contextStr}\n\nUser: ${message}`
                 : message;
 
+            // Check quota before routing (chat estimate: 1500 tokens, $0.015)
+            const quotaCheck = await this.checkQuotaForRequest(
+                userId,
+                projectId,
+                1500,
+                0.015,
+            );
+
+            if (!quotaCheck.allowed && quotaCheck.error) {
+                res.status(quotaCheck.error.status).json(quotaCheck.error.body);
+                return;
+            }
+
             // Route request
             const result = await routeRequest(
                 { prompt: fullPrompt },
@@ -451,6 +609,14 @@ export class APIServer {
                 role: 'assistant',
                 content: result.content,
             });
+
+            // Increment quota after successful request
+            await this.incrementQuotaAfterRequest(
+                userId,
+                projectId,
+                result.inputTokens + result.outputTokens,
+                result.cost,
+            );
 
             res.json({
                 result: {
@@ -1264,6 +1430,179 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
     }
 
     /**
+     * Handle semantic code search
+     */
+    private async handleSemanticSearch(req: Request, res: Response): Promise<void> {
+        try {
+            const { query, limit = 10, filters } = req.body;
+
+            if (!query) {
+                res.status(400).json({ error: 'Query is required' });
+                return;
+            }
+
+            const search = new SemanticSearch(db.getPool());
+            const results = await search.search(query, limit, filters);
+
+            res.json({
+                query,
+                results,
+                count: results.length,
+            });
+        } catch (error) {
+            logger.error('Semantic search failed', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Semantic search failed',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle code indexing
+     */
+    private async handleIndexCode(req: Request, res: Response): Promise<void> {
+        try {
+            const { filePath, code, language } = req.body;
+
+            if (!filePath || !code || !language) {
+                res.status(400).json({
+                    error: 'filePath, code, and language are required',
+                });
+                return;
+            }
+
+            const search = new SemanticSearch(db.getPool());
+            await search.indexCodeFile(filePath, code, language);
+
+            res.json({
+                success: true,
+                message: `Indexed ${filePath}`,
+            });
+        } catch (error) {
+            logger.error('Code indexing failed', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Code indexing failed',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle search statistics
+     */
+    private async handleSearchStats(_req: Request, res: Response): Promise<void> {
+        try {
+            const search = new SemanticSearch(db.getPool());
+            const stats = await search.getStatistics();
+
+            res.json(stats);
+        } catch (error) {
+            logger.error('Failed to get search stats', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to get search stats',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle knowledge pack creation
+     */
+    private async handleCreateKnowledgePack(req: Request, res: Response): Promise<void> {
+        try {
+            const { name, description, files, tags = [] } = req.body;
+
+            if (!name || !files || !Array.isArray(files)) {
+                res.status(400).json({
+                    error: 'name and files array are required',
+                });
+                return;
+            }
+
+            const search = new SemanticSearch(db.getPool());
+            const packManager = new KnowledgePackManager(db.getPool(), search);
+            const pack = await packManager.createPack(name, description, files, tags);
+
+            res.json({
+                success: true,
+                pack,
+            });
+        } catch (error) {
+            logger.error('Failed to create knowledge pack', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to create knowledge pack',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle knowledge pack loading
+     */
+    private async handleLoadKnowledgePack(req: Request, res: Response): Promise<void> {
+        try {
+            const { packId } = req.params;
+
+            const search = new SemanticSearch(db.getPool());
+            const packManager = new KnowledgePackManager(db.getPool(), search);
+            const result = await packManager.loadPack(packId);
+
+            res.json(result);
+        } catch (error) {
+            logger.error('Failed to load knowledge pack', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to load knowledge pack',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle knowledge pack search by tags
+     */
+    private async handleSearchKnowledgePacks(req: Request, res: Response): Promise<void> {
+        try {
+            const tags = req.query.tags as string | string[] | undefined;
+
+            if (!tags) {
+                res.status(400).json({ error: 'tags parameter is required' });
+                return;
+            }
+
+            const tagArray = Array.isArray(tags) ? tags : [tags];
+
+            const search = new SemanticSearch(db.getPool());
+            const packManager = new KnowledgePackManager(db.getPool(), search);
+            const packs = await packManager.searchByTags(tagArray);
+
+            res.json({
+                tags: tagArray,
+                packs,
+                count: packs.length,
+            });
+        } catch (error) {
+            logger.error('Failed to search knowledge packs', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to search knowledge packs',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
      * Start the API server
      */
     async start(): Promise<void> {
@@ -1296,6 +1635,12 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
                     'GET /v1/stats/conversation/:conversationId',
                     'GET /v1/server-stats',
                     'POST /v1/mcp-cli',
+                    'POST /v1/search/code',
+                    'POST /v1/search/index',
+                    'GET /v1/search/stats',
+                    'POST /v1/knowledge/pack',
+                    'GET /v1/knowledge/pack/:packId',
+                    'GET /v1/knowledge/search',
                 ],
             });
         });

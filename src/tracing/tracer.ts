@@ -17,7 +17,7 @@ import type {
 export class Tracer implements ITracer {
     private activeTraces = new Map<string, RequestTrace>();
 
-    constructor(private db: Pool) {}
+    constructor(private db: Pool) { }
 
     startTrace(
         requestType: RequestType,

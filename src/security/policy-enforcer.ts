@@ -27,7 +27,7 @@ export class PolicyEnforcer {
         'format C:',
     ];
 
-    constructor(private projectConfig?: ProjectConfig) {}
+    constructor(private projectConfig?: ProjectConfig) { }
 
     /**
      * Scan prompt for security violations

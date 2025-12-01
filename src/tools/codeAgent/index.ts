@@ -5,6 +5,12 @@ import { CodeAgentRequestSchema } from '../../mcp/types.js';
 import { routeRequest } from '../../routing/router.js';
 import { logger } from '../../logging/logger.js';
 
+// Export Phase 2 modules
+export * from './refactor.js';
+export * from './spec-first.js';
+export * from './test-triage.js';
+export * from './repo-map.js';
+
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

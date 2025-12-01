@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI MCP Gateway - Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+
+<body class="bg-gray-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // API client
+        const API_BASE = 'http://localhost:3000';
+
+        async function fetchAPI(endpoint) {
+            const response = await fetch(`${API_BASE}${endpoint}`);
+            if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+            return response.json();
+        }
+
+        // Dashboard Component
+        function Dashboard() {
+            const [stats, setStats] = useState(null);
+            const [health, setHealth] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [activeTab, setActiveTab] = useState('overview');
+
+            useEffect(() => {
+                loadData();
+                const interval = setInterval(loadData, 5000); // Refresh every 5s
+                return () => clearInterval(interval);
+            }, []);
+
+            async function loadData() {
+                try {
+                    const [statsData, healthData] = await Promise.all([
+                        fetchAPI('/v1/server-stats'),
+                        fetchAPI('/health'),
+                    ]);
+                    setStats(statsData);
+                    setHealth(healthData);
+                    setLoading(false);
+                } catch (error) {
+                    console.error('Failed to load data:', error);
+                    setLoading(false);
+                }
+            }
+
+            if (loading) {
+                return (
+                    <div className="flex items-center justify-center h-screen">
+                        <div className="text-2xl text-gray-600">Loading...</div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen">
+                    {/* Header */}
+                    <header className="bg-white shadow">
+                        <div className="max-w-7xl mx-auto px-4 py-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h1 className="text-3xl font-bold text-gray-900">
+                                        🤖 AI MCP Gateway
+                                    </h1>
+                                    <p className="text-gray-600">
+                                        Intelligent Multi-Layer Routing Dashboard
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <StatusBadge
+                                        status={health?.status}
+                                        label="System"
+                                    />
+                                    <StatusBadge
+                                        status={health?.database ? 'ok' : 'error'}
+                                        label="Database"
+                                    />
+                                    <StatusBadge
+                                        status={health?.redis ? 'ok' : 'error'}
+                                        label="Redis"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Tabs */}
+                    <div className="bg-white border-b">
+                        <div className="max-w-7xl mx-auto px-4">
+                            <nav className="flex space-x-4">
+                                {['overview', 'analytics', 'traces', 'playground'].map(tab => (
+                                    <button
+                                        key={tab}
+                                        onClick={() => setActiveTab(tab)}
+                                        className={`px-4 py-3 font-medium border-b-2 ${activeTab === tab
+                                                ? 'border-blue-500 text-blue-600'
+                                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                                            }`}
+                                    >
+                                        {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                                    </button>
+                                ))}
+                            </nav>
+                        </div>
+                    </div>
+
+                    {/* Content */}
+                    <main className="max-w-7xl mx-auto px-4 py-6">
+                        {activeTab === 'overview' && <OverviewTab stats={stats} health={health} />}
+                        {activeTab === 'analytics' && <AnalyticsTab />}
+                        {activeTab === 'traces' && <TracesTab />}
+                        {activeTab === 'playground' && <PlaygroundTab />}
+                    </main>
+                </div>
+            );
+        }
+
+        // Status Badge
+        function StatusBadge({ status, label }) {
+            const colors = {
+                ok: 'bg-green-100 text-green-800',
+                error: 'bg-red-100 text-red-800',
+                warning: 'bg-yellow-100 text-yellow-800',
+            };
+
+            return (
+                <div className={`px-3 py-1 rounded-full text-sm font-medium ${colors[status] || colors.warning}`}>
+                    {label}: {status === 'ok' ? '✓' : '✗'}
+                </div>
+            );
+        }
+
+        // Overview Tab
+        function OverviewTab({ stats, health }) {
+            return (
+                <div className="space-y-6">
+                    {/* Metrics Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <MetricCard
+                            title="Total Requests"
+                            value={stats?.requestsProcessed || 0}
+                            icon="📊"
+                        />
+                        <MetricCard
+                            title="Total Cost"
+                            value={`$${(stats?.totalCostUSD || 0).toFixed(4)}`}
+                            icon="💰"
+                        />
+                        <MetricCard
+                            title="Total Tokens"
+                            value={(stats?.totalTokens || 0).toLocaleString()}
+                            icon="🔢"
+                        />
+                        <MetricCard
+                            title="Avg Latency"
+                            value={`${(stats?.totalLatencyMs / (stats?.requestsProcessed || 1)).toFixed(0)}ms`}
+                            icon="⚡"
+                        />
+                    </div>
+
+                    {/* Layers Status */}
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h2 className="text-xl font-bold mb-4">Layer Status</h2>
+                        <div className="space-y-3">
+                            {Object.entries(health?.layers || {}).map(([layer, info]) => (
+                                <div key={layer} className="flex items-center justify-between p-3 bg-gray-50 rounded">
+                                    <div>
+                                        <span className="font-semibold">{layer}</span>
+                                        <span className="text-sm text-gray-600 ml-2">
+                                            {info.models.length} model(s)
+                                        </span>
+                                    </div>
+                                    <div className="text-sm">
+                                        {info.enabled ? '✅ Enabled' : '❌ Disabled'}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Providers */}
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h2 className="text-xl font-bold mb-4">Healthy Providers</h2>
+                        <div className="flex flex-wrap gap-2">
+                            {(health?.healthyProviders || []).map(provider => (
+                                <span
+                                    key={provider}
+                                    className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
+                                >
+                                    {provider}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Metric Card
+        function MetricCard({ title, value, icon }) {
+            return (
+                <div className="bg-white rounded-lg shadow p-6">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-sm text-gray-600">{title}</p>
+                            <p className="text-2xl font-bold mt-1">{value}</p>
+                        </div>
+                        <div className="text-4xl">{icon}</div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Analytics Tab
+        function AnalyticsTab() {
+            const [analytics, setAnalytics] = useState(null);
+
+            useEffect(() => {
+                fetchAPI('/v1/analytics')
+                    .then(setAnalytics)
+                    .catch(console.error);
+            }, []);
+
+            if (!analytics) {
+                return <div>Loading analytics...</div>;
+            }
+
+            return (
+                <div className="space-y-6">
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h2 className="text-xl font-bold mb-4">Cost by Layer</h2>
+                        <canvas id="costByLayerChart"></canvas>
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h2 className="text-xl font-bold mb-4">Requests Over Time</h2>
+                        <canvas id="requestsChart"></canvas>
+                    </div>
+                </div>
+            );
+        }
+
+        // Traces Tab
+        function TracesTab() {
+            const [traces, setTraces] = useState([]);
+
+            return (
+                <div className="bg-white rounded-lg shadow p-6">
+                    <h2 className="text-xl font-bold mb-4">Recent Traces</h2>
+                    <p className="text-gray-600">Trace viewer coming soon...</p>
+                </div>
+            );
+        }
+
+        // Playground Tab
+        function PlaygroundTab() {
+            const [prompt, setPrompt] = useState('');
+            const [response, setResponse] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            async function handleSubmit(e) {
+                e.preventDefault();
+                setLoading(true);
+                try {
+                    const result = await fetch(`${API_BASE}/v1/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            messages: [{ role: 'user', content: prompt }],
+                        }),
+                    }).then(r => r.json());
+                    setResponse(result.response?.content || 'No response');
+                } catch (error) {
+                    setResponse(`Error: ${error.message}`);
+                } finally {
+                    setLoading(false);
+                }
+            }
+
+            return (
+                <div className="bg-white rounded-lg shadow p-6">
+                    <h2 className="text-xl font-bold mb-4">Model Playground</h2>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Prompt
+                            </label>
+                            <textarea
+                                value={prompt}
+                                onChange={(e) => setPrompt(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                rows={4}
+                                placeholder="Enter your prompt..."
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
+                        >
+                            {loading ? 'Sending...' : 'Send'}
+                        </button>
+                        {response && (
+                            <div className="mt-4 p-4 bg-gray-50 rounded-md">
+                                <h3 className="font-medium mb-2">Response:</h3>
+                                <pre className="whitespace-pre-wrap text-sm">{response}</pre>
+                            </div>
+                        )}
+                    </form>
+                </div>
+            );
+        }
+
+        // Render
+        ReactDOM.render(<Dashboard />, document.getElementById('root'));
+    </script>
+</body>
+
+</html>

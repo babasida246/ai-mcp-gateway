@@ -13,6 +13,8 @@ RUN npm ci
 
 # Copy source code
 COPY src ./src
+COPY scripts ./scripts
+COPY migrations ./migrations
 
 # Build the application
 RUN npm run build
@@ -28,6 +30,9 @@ RUN npm ci --only=production
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/src ./src
 
 # Create logs directory
 RUN mkdir -p logs

@@ -6,7 +6,7 @@ import { Pool } from 'pg';
 import type { QuotaCheck } from '../types/tracing.js';
 
 export class QuotaEnforcer {
-    constructor(private db: Pool) {}
+    constructor(private db: Pool) { }
 
     /**
      * Check if user has quota available for a request

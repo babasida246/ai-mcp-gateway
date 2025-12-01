@@ -66,7 +66,7 @@ export async function recordLLMCall(
     try {
         const { getTracer } = await import('../tracing/tracer.js');
         const tracer = getTracer();
-        
+
         const llmCall: LLMCallTrace = {
             model: model.id,
             provider: model.provider,
@@ -104,7 +104,7 @@ export async function callLLMWithTracing(
         throw err;
     } finally {
         const durationMs = Date.now() - startTime;
-        
+
         // Record the LLM call even if it failed
         if (tracerEnabled && currentTraceId && response) {
             await recordLLMCall(
