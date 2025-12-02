@@ -8,6 +8,7 @@ import { db } from '../db/postgres.js';
 import { redisCache } from '../cache/redis.js';
 import { providerHealth } from '../config/provider-health.js';
 import { SemanticSearch, KnowledgePackManager } from '../search/semantic.js';
+import { modelConfigService } from '../db/model-config.js';
 import type { TaskType } from '../mcp/types.js';
 
 /**
@@ -1682,7 +1683,7 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
      */
     private async handleGetLayers(_req: Request, res: Response): Promise<void> {
         try {
-            const { getModelsByLayer, LAYERS_IN_ORDER, isLayerEnabled } = await import('../config/models.js');
+            const { LAYERS_IN_ORDER } = await import('../config/models.js');
             const layers: Record<string, {
                 enabled: boolean;
                 models: Array<{
@@ -1695,10 +1696,10 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
             }> = {};
 
             for (const layer of LAYERS_IN_ORDER) {
-                const models = getModelsByLayer(layer);
+                const models = await modelConfigService.getModelsByLayer(layer);
                 const providers = Array.from(new Set(models.map(m => m.provider)));
                 layers[layer] = {
-                    enabled: isLayerEnabled(layer),
+                    enabled: await modelConfigService.isLayerEnabled(layer),
                     models: models.map(m => ({
                         id: m.id,
                         provider: m.provider,
@@ -1729,8 +1730,7 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
             const { modelId } = req.params;
             const { enabled } = req.body;
 
-            const { MODEL_CATALOG } = await import('../config/models.js');
-            const model = MODEL_CATALOG.find(m => m.id === modelId);
+            const model = await modelConfigService.getModelById(modelId);
 
             if (!model) {
                 res.status(404).json({ error: 'Model not found' });
@@ -1738,16 +1738,18 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
             }
 
             if (enabled !== undefined) {
-                model.enabled = enabled;
+                await modelConfigService.setModelEnabled(modelId, enabled);
             }
+
+            const updatedModel = await modelConfigService.getModelById(modelId);
 
             res.json({
                 success: true,
                 model: {
-                    id: model.id,
-                    provider: model.provider,
-                    apiModelName: model.apiModelName,
-                    enabled: model.enabled,
+                    id: updatedModel!.id,
+                    provider: updatedModel!.provider,
+                    apiModelName: updatedModel!.apiModelName,
+                    enabled: updatedModel!.enabled,
                 },
             });
         } catch (error) {
@@ -1775,16 +1777,15 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
                 return;
             }
 
-            const { MODEL_CATALOG } = await import('../config/models.js');
-
             // Check if model already exists
-            if (MODEL_CATALOG.find(m => m.id === id)) {
+            const existingModel = await modelConfigService.getModelById(id);
+            if (existingModel) {
                 res.status(409).json({ error: 'Model already exists' });
                 return;
             }
 
             // Add new model
-            MODEL_CATALOG.push({
+            await modelConfigService.addModel({
                 id,
                 provider,
                 apiModelName,
@@ -1816,15 +1817,14 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
     private async handleDeleteModel(req: Request, res: Response): Promise<void> {
         try {
             const { modelId } = req.params;
-            const { MODEL_CATALOG } = await import('../config/models.js');
 
-            const index = MODEL_CATALOG.findIndex(m => m.id === modelId);
-            if (index === -1) {
+            const model = await modelConfigService.getModelById(modelId);
+            if (!model) {
                 res.status(404).json({ error: 'Model not found' });
                 return;
             }
 
-            MODEL_CATALOG.splice(index, 1);
+            await modelConfigService.deleteModel(modelId);
             res.json({ success: true, modelId });
         } catch (error) {
             logger.error('Failed to delete model', {
@@ -1852,9 +1852,16 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
                 return;
             }
 
-            // Update runtime environment variable
-            const envKey = `LAYER_${layerId}_ENABLED`;
-            (env as any)[envKey] = enabled;
+            // Validate layer ID
+            if (!['L0', 'L1', 'L2', 'L3'].includes(layerId)) {
+                res.status(400).json({
+                    error: 'Invalid layer ID. Must be L0, L1, L2, or L3',
+                });
+                return;
+            }
+
+            // Update layer via modelConfigService
+            await modelConfigService.setLayerEnabled(layerId as 'L0' | 'L1' | 'L2' | 'L3', enabled);
 
             logger.info(`Layer ${layerId} ${enabled ? 'enabled' : 'disabled'}`);
 
