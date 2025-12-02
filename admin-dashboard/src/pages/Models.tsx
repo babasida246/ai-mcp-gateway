@@ -73,21 +73,32 @@ export default function Models() {
 
   async function toggleLayer(layerName: string) {
     try {
+      const newEnabled = !layers[layerName].enabled;
       await axios.put(`${API_BASE}/v1/layers/${layerName}/toggle`, {
-        enabled: !layers[layerName].enabled
+        enabled: newEnabled
       });
+      
+      // Update the state immediately for real-time UI feedback
       setLayers(prev => ({
         ...prev,
         [layerName]: {
           ...prev[layerName],
-          enabled: !prev[layerName].enabled
+          enabled: newEnabled,
+          // If disabling layer, disable all models in that layer
+          models: newEnabled ? prev[layerName].models : prev[layerName].models.map(m => ({...m, enabled: false}))
         }
       }));
-      setSaveStatus(`Layer ${layerName} ${layers[layerName].enabled ? 'disabled' : 'enabled'}`);
+      
+      setSaveStatus(`Layer ${layerName} ${newEnabled ? 'enabled' : 'disabled'}`);
       setTimeout(() => setSaveStatus(null), 3000);
+      
+      // Reload data from server to ensure consistency
+      setTimeout(() => loadLayers(), 500);
     } catch (err) {
       console.error('Failed to toggle layer:', err);
       setError(err instanceof Error ? err.message : 'Failed to toggle layer');
+      // Reload to revert any optimistic updates on error
+      loadLayers();
     }
   }
 
@@ -130,13 +141,34 @@ export default function Models() {
 
   async function toggleModel(modelId: string, currentEnabled: boolean) {
     try {
-      await axios.put(`${API_BASE}/v1/models/${modelId}`, {
-        enabled: !currentEnabled
+      const newEnabled = !currentEnabled;
+      
+      // Optimistically update the state for immediate UI feedback
+      setLayers(prev => {
+        const newLayers = { ...prev };
+        for (const layerName in newLayers) {
+          const layerData = newLayers[layerName];
+          layerData.models = layerData.models.map(model => 
+            model.id === modelId ? { ...model, enabled: newEnabled } : model
+          );
+        }
+        return newLayers;
       });
-      loadLayers(); // Reload to get updated data
+      
+      await axios.put(`${API_BASE}/v1/models/${modelId}`, {
+        enabled: newEnabled
+      });
+      
+      setSaveStatus(`Model ${newEnabled ? 'enabled' : 'disabled'}`);
+      setTimeout(() => setSaveStatus(null), 3000);
+      
+      // Reload data from server to ensure consistency
+      setTimeout(() => loadLayers(), 500);
     } catch (err) {
       console.error('Failed to toggle model:', err);
       setError(err instanceof Error ? err.message : 'Failed to toggle model');
+      // Reload to revert any optimistic updates on error
+      loadLayers();
     }
   }
 

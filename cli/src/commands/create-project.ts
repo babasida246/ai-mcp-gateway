@@ -60,32 +60,32 @@ export async function createProjectCommand(
             // Try to auto-generate project context if no description and no instructor file
             console.log(chalk.yellow('🔍 No description provided and no mcp-instructor.md found.'));
             console.log(chalk.yellow('Analyzing existing project files to generate context...'));
-            
+
             try {
                 const { readProjectContext, hasMinimalProjectContext } = await import('../utils/projectContext.js');
                 const projectContext = readProjectContext();
-                
+
                 if (!hasMinimalProjectContext(projectContext)) {
                     const { summarizeProject } = await import('./summarize.js');
-                    await summarizeProject({ 
+                    await summarizeProject({
                         output: 'temp-project-summary.md',
                         budget: 0,
-                        verbose: true 
+                        verbose: true
                     });
-                    
+
                     if (fs.existsSync('temp-project-summary.md')) {
                         const summaryContent = fs.readFileSync('temp-project-summary.md', 'utf-8');
                         const { createMissingProjectFiles } = await import('../utils/projectContext.js');
                         await createMissingProjectFiles(process.cwd(), summaryContent, true);
-                        
+
                         // Use the generated instructor file
                         if (fs.existsSync(instructorPath)) {
                             finalDescription = fs.readFileSync(instructorPath, 'utf-8').trim();
                             console.log(chalk.green('📖 Generated and loaded mcp-instructor.md'));
                         }
-                        
+
                         // Clean up temp file
-                        try { fs.unlinkSync('temp-project-summary.md'); } catch {}
+                        try { fs.unlinkSync('temp-project-summary.md'); } catch { }
                     }
                 }
             } catch (error) {

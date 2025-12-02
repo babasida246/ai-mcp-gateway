@@ -1,10 +1,22 @@
 import { Router } from 'express';
+import { OpenRouter } from '@openrouter/sdk';
 import axios from 'axios';
 import { logger } from '../logging/logger.js';
 import { providerManager } from '../config/provider-manager.js';
 
 /**
- * Get OpenRouter API key for requests
+ * Get OpenRouter client instance
+ */
+async function getOpenRouterClient(): Promise<OpenRouter> {
+    const apiKey = await providerManager.getApiKey('openrouter');
+    if (!apiKey) {
+        throw new Error('OpenRouter API key not configured');
+    }
+    return new OpenRouter({ apiKey });
+}
+
+/**
+ * Get OpenRouter API key for direct axios calls
  */
 async function getOpenRouterApiKey(): Promise<string> {
     const apiKey = await providerManager.getApiKey('openrouter');
@@ -26,25 +38,18 @@ export function createOpenRouterRoutes(): Router {
      */
     router.get('/models', async (req, res) => {
         try {
-            const apiKey = await getOpenRouterApiKey();
-
-            const response = await axios.get('https://openrouter.ai/api/v1/models', {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'HTTP-Referer': req.get('origin') || 'https://github.com/babasida246/ai-mcp-gateway',
-                    'X-Title': 'ai-mcp-gateway'
-                }
-            });
+            const client = await getOpenRouterClient();
+            const response = await client.models.list();
 
             res.json({
                 success: true,
-                models: response.data.data || response.data
+                models: response.data || response
             });
         } catch (error: any) {
             logger.error('Failed to fetch OpenRouter models', { error: error.message });
-            res.status(error.response?.status || 500).json({
+            res.status(error.status || 500).json({
                 success: false,
-                error: error.response?.data || error.message
+                error: error.message || 'Failed to fetch models'
             });
         }
     });

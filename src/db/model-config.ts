@@ -19,6 +19,7 @@ interface DBModelConfig {
     price_per_1k_output_tokens: number;
     context_window: number;
     enabled: boolean;
+    priority: number;
     capabilities: {
         code: boolean;
         general: boolean;
@@ -85,9 +86,9 @@ class ModelConfigService {
     private async loadFromDatabase(): Promise<void> {
         const client = await db.getClient();
         try {
-            // Load model configs
+            // Load model configs (ALL models, enabled and disabled)
             const modelResult = await client.query<DBModelConfig>(
-                'SELECT * FROM model_configs WHERE enabled = true ORDER BY layer, relative_cost'
+                'SELECT * FROM model_configs ORDER BY layer, priority ASC, relative_cost'
             );
 
             this.modelCache.clear();
@@ -103,6 +104,7 @@ class ModelConfigService {
                     contextWindow: row.context_window,
                     enabled: row.enabled,
                     capabilities: row.capabilities,
+                    priority: row.priority || 0,
                 };
                 this.modelCache.set(config.id, config);
             }
@@ -190,7 +192,7 @@ class ModelConfigService {
     }
 
     /**
-     * Get models by layer
+     * Get models by layer, sorted by priority (0 = highest priority)
      */
     async getModelsByLayer(layer: ModelLayer): Promise<ModelConfig[]> {
         await this.initialize();
@@ -200,9 +202,27 @@ class ModelConfigService {
             return [];
         }
 
-        const models = Array.from(this.modelCache.values()).filter(
-            m => m.layer === layer && m.enabled
-        );
+        const models = Array.from(this.modelCache.values())
+            .filter(m => m.layer === layer && m.enabled)
+            .sort((a, b) => (a.priority || 0) - (b.priority || 0)); // Sort by priority ASC (0 = highest)
+
+        return models;
+    }
+
+    /**
+     * Get ALL models by layer (including disabled ones), sorted by priority
+     * Used for admin dashboard to show all models
+     */
+    async getAllModelsByLayer(layer: ModelLayer): Promise<ModelConfig[]> {
+        await this.initialize();
+
+        const models = Array.from(this.modelCache.values())
+            .filter(m => m.layer === layer) // Don't filter by enabled status
+            .sort((a, b) => (a.priority || 0) - (b.priority || 0)); // Sort by priority ASC (0 = highest)
+
+        logger.info(`🔍 getAllModelsByLayer(${layer}) returning ${models.length} models:`, {
+            models: models.map(m => ({ id: m.id, enabled: m.enabled }))
+        });
 
         return models;
     }
@@ -225,7 +245,7 @@ class ModelConfigService {
     }
 
     /**
-     * Update layer enabled status
+     * Update layer enabled status and cascade to all models in that layer
      */
     async setLayerEnabled(layer: ModelLayer, enabled: boolean): Promise<void> {
         if (!db.isReady()) {
@@ -235,23 +255,61 @@ class ModelConfigService {
             if (layerConfig) {
                 layerConfig.enabled = enabled;
             }
+
+            // Cascade to models in cache
+            if (!enabled) {
+                for (const model of this.modelCache.values()) {
+                    if (model.layer === layer) {
+                        model.enabled = false;
+                    }
+                }
+            }
             return;
         }
 
         const client = await db.getClient();
         try {
+            // Begin transaction
+            await client.query('BEGIN');
+
+            // Update layer status
             await client.query(
                 'UPDATE layer_configs SET enabled = $1, updated_at = CURRENT_TIMESTAMP WHERE layer = $2',
                 [enabled, layer]
             );
 
-            // Update cache
+            // If disabling layer, disable all models in that layer
+            if (!enabled) {
+                await client.query(
+                    'UPDATE model_configs SET enabled = false, updated_at = CURRENT_TIMESTAMP WHERE layer = $1',
+                    [layer]
+                );
+
+                // Update model cache
+                for (const model of this.modelCache.values()) {
+                    if (model.layer === layer) {
+                        model.enabled = false;
+                    }
+                }
+
+                logger.info(`Layer ${layer} disabled - all models in layer also disabled`);
+            } else {
+                logger.info(`Layer ${layer} enabled`);
+            }
+
+            // Commit transaction
+            await client.query('COMMIT');
+
+            // Update layer cache
             const layerConfig = this.layerCache.get(layer);
             if (layerConfig) {
                 layerConfig.enabled = enabled;
             }
 
-            logger.info(`Layer ${layer} ${enabled ? 'enabled' : 'disabled'}`);
+        } catch (error) {
+            await client.query('ROLLBACK');
+            logger.error(`Failed to update layer ${layer}`, { error });
+            throw error;
         } finally {
             client.release();
         }

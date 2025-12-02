@@ -296,6 +296,34 @@ export async function routeRequest(
     request: LLMRequest,
     context: RoutingContext,
 ): Promise<LLMResponse> {
+    // Check budget constraints early - if budget is 0, force L0 layer (free models only)
+    if (context.budget === 0) {
+        logger.info('Budget is 0, forcing L0 layer (free models only)', {
+            budget: context.budget,
+            forcedLayer: 'L0',
+        });
+
+        const model = await pickModelFromLayer('L0', context.taskType);
+        if (!model) {
+            throw new Error('No free models available in L0 layer');
+        }
+
+        // Check if the selected model is actually free
+        const isFree = model.id.includes(':free') || (model as any).pricing?.prompt === 0;
+        if (!isFree) {
+            logger.warn('L0 model is not free, but budget is 0', {
+                model: model.id,
+                budget: context.budget,
+            });
+        }
+
+        const response = await callLLM(request, model);
+        return {
+            ...response,
+            routingSummary: `Budget enforcement: ${model.id} (layer L0, free tier only)`,
+        };
+    }
+
     // If user specified preferred layer, use it directly without complexity detection or cross-check
     if (context.preferredLayer) {
         logger.info('Using user-specified layer', {
@@ -362,8 +390,19 @@ export async function routeRequest(
         const currentLayerIndex = LAYERS_IN_ORDER.indexOf(currentLayer);
         const canEscalate = nextLayer && currentLayerIndex < maxLayerIndex;
 
-        // If auto-escalate is enabled and we can escalate
-        if (enableAutoEscalate && canEscalate) {
+        // Prevent escalation if budget is 0 (free tier only)
+        const allowEscalation = context.budget !== 0;
+        if (!allowEscalation && canEscalate) {
+            logger.info('Escalation blocked due to budget constraint', {
+                budget: context.budget,
+                currentLayer,
+                suggestedLayer: nextLayer,
+                reason: 'Budget is 0, free tier only',
+            });
+        }
+
+        // If auto-escalate is enabled and we can escalate and budget allows
+        if (enableAutoEscalate && canEscalate && allowEscalation) {
             logger.info('Auto-escalating to next layer', {
                 from: currentLayer,
                 to: nextLayer,
@@ -390,7 +429,8 @@ export async function routeRequest(
         }
 
         // If auto-escalate is disabled but escalation is possible, ask for confirmation
-        if (!enableAutoEscalate && canEscalate) {
+        // But only if budget allows escalation
+        if (!enableAutoEscalate && canEscalate && allowEscalation) {
             const isPaidLayer = currentLayer !== 'L0' || (nextLayer && nextLayer !== 'L0');
 
             if (isPaidLayer) {

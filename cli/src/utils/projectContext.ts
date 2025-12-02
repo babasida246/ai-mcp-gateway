@@ -133,33 +133,33 @@ function extractSummarySection(content: string): {
     dataFlow?: string;
 } {
     const sections: any = {};
-    
+
     // Simple extraction based on common markdown headers
     const overviewMatch = content.match(/##?\s*(?:Project\s+)?Overview[\s\S]*?(?=\n##|$)/i);
     if (overviewMatch) {
         sections.overview = overviewMatch[0].replace(/##?\s*(?:Project\s+)?Overview\s*/i, '').trim();
     }
-    
+
     const architectureMatch = content.match(/##?\s*(?:Architecture|Technology\s+Stack)[\s\S]*?(?=\n##|$)/i);
     if (architectureMatch) {
         sections.architecture = architectureMatch[0].replace(/##?\s*(?:Architecture|Technology\s+Stack)\s*/i, '').trim();
     }
-    
+
     const featuresMatch = content.match(/##?\s*(?:Key\s+)?Features[\s\S]*?(?=\n##|$)/i);
     if (featuresMatch) {
         sections.features = featuresMatch[0].replace(/##?\s*(?:Key\s+)?Features\s*/i, '').trim();
     }
-    
+
     const roadmapMatch = content.match(/##?\s*(?:Roadmap|Future\s+Development)[\s\S]*?(?=\n##|$)/i);
     if (roadmapMatch) {
         sections.roadmap = roadmapMatch[0].replace(/##?\s*(?:Roadmap|Future\s+Development)\s*/i, '').trim();
     }
-    
+
     const nextStepsMatch = content.match(/##?\s*Next\s+Steps[\s\S]*?(?=\n##|$)/i);
     if (nextStepsMatch) {
         sections.nextSteps = nextStepsMatch[0].replace(/##?\s*Next\s+Steps\s*/i, '').trim();
     }
-    
+
     return sections;
 }
 

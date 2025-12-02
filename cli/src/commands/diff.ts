@@ -60,6 +60,7 @@ export async function diffCommand(
         let response = await client.send({
             mode: 'diff',
             message: fullMessage,
+            budget: 0, // Free tier for diff generation
             ...context,
         });
 
@@ -80,6 +81,7 @@ export async function diffCommand(
                 response = await client.send({
                     mode: 'diff',
                     message: escalatedMessage,
+                    budget: 0, // Free tier for diff generation
                     ...context,
                 });
             }

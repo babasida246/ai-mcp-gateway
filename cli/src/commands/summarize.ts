@@ -55,6 +55,7 @@ export async function summarizeProject(options: ProjectSummaryOptions = {}) {
         const response = await client.send({
             mode: 'chat',
             message: summaryPrompt,
+            budget: options.budget ?? 0, // Use provided budget or default to free tier
         });
 
         // Format the summary

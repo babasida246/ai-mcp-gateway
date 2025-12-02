@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import { OpenRouter } from '@openrouter/sdk';
 import { LLMClient, estimateTokens, calculateCost } from './client.js';
 import { LLMRequest, LLMResponse } from '../../mcp/types.js';
 import { ModelConfig } from '../../config/models.js';
@@ -7,12 +7,12 @@ import { logger } from '../../logging/logger.js';
 import { providerManager } from '../../config/provider-manager.js';
 
 /**
- * OpenRouter LLM client (uses OpenAI-compatible API)
+ * OpenRouter LLM client (uses official OpenRouter SDK)
  */
 export class OpenRouterClient implements LLMClient {
-    private client: OpenAI | null = null;
+    private client: OpenRouter | null = null;
 
-    private async getClient(): Promise<OpenAI> {
+    private async getClient(): Promise<OpenRouter> {
         if (!this.client) {
             // Try to get API key from database first
             let apiKey = await providerManager.getApiKey('openrouter');
@@ -26,9 +26,8 @@ export class OpenRouterClient implements LLMClient {
                 throw new Error('OPENROUTER_API_KEY is not configured in database or environment');
             }
 
-            this.client = new OpenAI({
+            this.client = new OpenRouter({
                 apiKey,
-                baseURL: 'https://openrouter.ai/api/v1',
             });
         }
         return this.client;
@@ -50,7 +49,7 @@ export class OpenRouterClient implements LLMClient {
         });
 
         try {
-            const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+            const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
 
             if (request.systemPrompt) {
                 messages.push({
@@ -64,16 +63,16 @@ export class OpenRouterClient implements LLMClient {
                 content: request.prompt,
             });
 
-            const response = await client.chat.completions.create({
+            const response = await client.chat.send({
                 model: model.apiModelName,
                 messages,
-                max_tokens: request.maxTokens || 4096,
+                maxTokens: request.maxTokens || 4096,
                 temperature: request.temperature || 0.7,
             });
 
             const content = response.choices[0]?.message?.content || '';
-            const inputTokens = response.usage?.prompt_tokens || estimateTokens(request.prompt);
-            const outputTokens = response.usage?.completion_tokens || estimateTokens(content);
+            const inputTokens = response.usage?.promptTokens || estimateTokens(request.prompt);
+            const outputTokens = response.usage?.completionTokens || estimateTokens(content);
             const cost = calculateCost(inputTokens, outputTokens, model);
 
             return {

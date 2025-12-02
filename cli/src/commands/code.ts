@@ -55,35 +55,35 @@ export async function codeCommand(
     // Read project context files
     console.log(chalk.dim('🔍 Reading project context...'));
     const projectContext = readProjectContext();
-    
+
     // Check if we need to auto-generate project context files
     if (!hasMinimalProjectContext(projectContext)) {
         console.log(chalk.yellow('📝 Project context files missing. Generating project summary first...'));
-        
+
         try {
             // Import and run summarize functionality
             const { summarizeProject } = await import('./summarize.js');
-            
+
             // Generate summary with free budget
-            await summarizeProject({ 
+            await summarizeProject({
                 output: 'temp-project-summary.md',
                 budget: 0, // Free tier for initial analysis
-                verbose: true 
+                verbose: true
             });
-            
+
             // Read the generated summary
             const summaryPath = 'temp-project-summary.md';
             if (existsSync(summaryPath)) {
                 const summaryContent = readFileSync(summaryPath, 'utf-8');
-                
+
                 // Create missing project files based on summary
                 await createMissingProjectFiles(process.cwd(), summaryContent, true);
-                
+
                 // Clean up temporary file
                 try {
                     require('fs').unlinkSync(summaryPath);
-                } catch {}
-                
+                } catch { }
+
                 // Re-read project context with newly created files
                 console.log(chalk.green('✅ Project context files created. Re-reading context...'));
                 const updatedContext = readProjectContext();
@@ -93,7 +93,7 @@ export async function codeCommand(
             console.log(chalk.yellow('⚠️  Could not auto-generate project context. Continuing without...'));
         }
     }
-    
+
     displayContextSummary(projectContext);
 
     let fileContent: string;
@@ -156,6 +156,7 @@ export async function codeCommand(
         let response = await client.send({
             mode: 'code',
             message: fullMessage,
+            budget: 0, // Free tier for code analysis
             ...context,
         });
 
@@ -207,6 +208,7 @@ export async function codeCommand(
                 response = await client.send({
                     mode: 'code',
                     message: escalatedMessage,
+                    budget: 0, // Free tier for code analysis
                     ...context,
                 });
             }

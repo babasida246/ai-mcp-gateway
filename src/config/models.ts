@@ -39,6 +39,7 @@ export interface ModelConfig {
     capabilities: ModelCapabilities;
     contextWindow: number; // Max context window size
     enabled: boolean; // Is this model enabled?
+    priority: number; // Priority within layer (0 = highest priority, lower numbers = higher priority)
 }
 
 /**
@@ -61,6 +62,7 @@ export const MODEL_CATALOG: ModelConfig[] = [
         },
         contextWindow: 8192,
         enabled: false, // Enable when OSS_MODEL_ENABLED=true
+        priority: 10, // Lower priority due to limited capabilities
     },
     {
         id: 'openrouter-llama-3.3-70b-free',
@@ -77,6 +79,7 @@ export const MODEL_CATALOG: ModelConfig[] = [
         },
         contextWindow: 131072,
         enabled: true, // Free model via OpenRouter
+        priority: 0, // Highest priority - best free model
     },
     {
         id: 'openrouter-grok-free',
@@ -93,6 +96,7 @@ export const MODEL_CATALOG: ModelConfig[] = [
         },
         contextWindow: 131072,
         enabled: true, // Free model via OpenRouter
+        priority: 1, // Second priority - good alternative
     },
 
     // Layer L1 - Low-cost models
@@ -112,6 +116,7 @@ export const MODEL_CATALOG: ModelConfig[] = [
         },
         contextWindow: 1000000,
         enabled: false, // Model not available on OpenRouter
+        priority: 0, // Would be highest priority in L1 if available
     },
     {
         id: 'openrouter-gpt-4o-mini',
@@ -129,6 +134,7 @@ export const MODEL_CATALOG: ModelConfig[] = [
         },
         contextWindow: 128000,
         enabled: true, // Via OpenRouter
+        priority: 1, // Second priority - reliable and affordable
     },
     {
         id: 'openai-gpt-4o-mini',

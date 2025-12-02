@@ -32,6 +32,7 @@ export interface RoutingContext {
     preferredLayer?: ModelLayer;
     enableCrossCheck?: boolean;
     enableAutoEscalate?: boolean;
+    budget?: number; // Budget limit in USD (0 = free tier only)
 }
 
 /**

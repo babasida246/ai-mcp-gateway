@@ -23,55 +23,55 @@ import * as fs from 'fs';
 
 export async function chatCommand(
     message: string | undefined,
-    options: { endpoint?: string; apiKey?: string; interactive?: boolean; useClaudeCode?: boolean }
+    options: { endpoint?: string; apiKey?: string; interactive?: boolean; useClaudeCode?: boolean; budget?: number }
 ): Promise<void> {
     const client = new MCPClient(options.endpoint, options.apiKey);
 
     if (message) {
         // Single message mode
-        await sendMessage(client, message);
+        await sendMessage(client, message, options.budget);
     } else {
         // Interactive mode
-        await interactiveMode(client);
+        await interactiveMode(client, options.budget);
     }
 }
 
 /**
  * Send a single message
  */
-async function sendMessage(client: MCPClient, prompt: string): Promise<void> {
+async function sendMessage(client: MCPClient, prompt: string, budget?: number): Promise<void> {
     // Read project context files
     console.log(chalk.dim('🔍 Reading project context...'));
     const projectContext = readProjectContext();
-    
+
     // Check if we need to auto-generate project context files
     if (!hasMinimalProjectContext(projectContext)) {
         console.log(chalk.yellow('📝 Project context files missing. Generating project summary first...'));
-        
+
         try {
             // Import and run summarize functionality
             const { summarizeProject } = await import('./summarize.js');
-            
+
             // Generate summary with free budget
-            await summarizeProject({ 
+            await summarizeProject({
                 output: 'temp-project-summary.md',
                 budget: 0, // Free tier for initial analysis
                 verbose: false // Less verbose for chat mode
             });
-            
+
             // Read the generated summary
             const summaryPath = 'temp-project-summary.md';
             if (fs.existsSync(summaryPath)) {
                 const summaryContent = fs.readFileSync(summaryPath, 'utf-8');
-                
+
                 // Create missing project files based on summary
                 await createMissingProjectFiles(process.cwd(), summaryContent, false);
-                
+
                 // Clean up temporary file
                 try {
                     fs.unlinkSync(summaryPath);
-                } catch {}
-                
+                } catch { }
+
                 // Re-read project context with newly created files
                 console.log(chalk.green('✅ Project context files created.'));
                 const updatedContext = readProjectContext();
@@ -81,10 +81,10 @@ async function sendMessage(client: MCPClient, prompt: string): Promise<void> {
             console.log(chalk.yellow('⚠️  Could not auto-generate project context. Continuing without...'));
         }
     }
-    
+
     // Build enhanced prompt with project context
     const enhancedPrompt = buildContextualPrompt(prompt, projectContext, 'analysis');
-    
+
     console.log(chalk.dim('\n⏳ Sending request to MCP server...\n'));
 
     const context = client.getCurrentContext();
@@ -93,6 +93,7 @@ async function sendMessage(client: MCPClient, prompt: string): Promise<void> {
         let response = await client.send({
             mode: 'chat',
             message: enhancedPrompt,
+            budget: budget ?? 0, // Default to free tier if not specified
             ...context,
         });
 
@@ -113,6 +114,7 @@ async function sendMessage(client: MCPClient, prompt: string): Promise<void> {
                 response = await client.send({
                     mode: 'chat',
                     message: escalatedMessage,
+                    budget: budget ?? 0, // Default to free tier if not specified
                     ...context,
                 });
             }
@@ -127,7 +129,7 @@ async function sendMessage(client: MCPClient, prompt: string): Promise<void> {
 /**
  * Interactive chat mode with readline
  */
-async function interactiveMode(client: MCPClient): Promise<void> {
+async function interactiveMode(client: MCPClient, budget?: number): Promise<void> {
     console.log(chalk.cyan('╔══════════════════════════════════════╗'));
     console.log(chalk.cyan('║   MCP Interactive Chat Mode          ║'));
     console.log(chalk.cyan('╚══════════════════════════════════════╝'));
@@ -172,6 +174,7 @@ async function interactiveMode(client: MCPClient): Promise<void> {
             const response = await client.send({
                 mode: 'chat',
                 message: input,
+                budget: budget ?? 0, // Default to free tier if not specified
                 ...context,
             });
 

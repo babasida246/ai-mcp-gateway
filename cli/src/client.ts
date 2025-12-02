@@ -12,6 +12,7 @@ import { execSync } from 'child_process';
 export interface MCPRequest {
     mode: 'chat' | 'code' | 'diff';
     message: string;
+    budget?: number; // Budget limit for request (0 = free tier only)
     context?: {
         cwd?: string;
         files?: string[];

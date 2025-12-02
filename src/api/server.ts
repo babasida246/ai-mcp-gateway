@@ -1111,7 +1111,7 @@ export class APIServer {
      */
     private async handleMCPCLI(req: Request, res: Response): Promise<void> {
         try {
-            const { mode, message, context } = req.body;
+            const { mode, message, context, budget } = req.body;
 
             if (!mode || !message) {
                 res.status(400).json({
@@ -1223,6 +1223,7 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
                     complexity,
                     taskType,
                     preferredLayer, // Pass preferred layer if user specified
+                    budget: typeof budget === 'number' ? budget : undefined, // Pass budget if provided
                 }
             );
 
@@ -1709,7 +1710,7 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
             }> = {};
 
             for (const layer of LAYERS_IN_ORDER) {
-                const models = await modelConfigService.getModelsByLayer(layer);
+                const models = await modelConfigService.getAllModelsByLayer(layer); // Use getAllModelsByLayer for admin
                 const providers = Array.from(new Set(models.map(m => m.provider)));
                 layers[layer] = {
                     enabled: await modelConfigService.isLayerEnabled(layer),
