@@ -4,6 +4,7 @@ import { LLMRequest, LLMResponse } from '../../mcp/types.js';
 import { ModelConfig } from '../../config/models.js';
 import { env } from '../../config/env.js';
 import { logger } from '../../logging/logger.js';
+import { providerManager } from '../../config/provider-manager.js';
 
 /**
  * OpenRouter LLM client (uses OpenAI-compatible API)
@@ -11,13 +12,22 @@ import { logger } from '../../logging/logger.js';
 export class OpenRouterClient implements LLMClient {
     private client: OpenAI | null = null;
 
-    private getClient(): OpenAI {
+    private async getClient(): Promise<OpenAI> {
         if (!this.client) {
-            if (!env.OPENROUTER_API_KEY) {
-                throw new Error('OPENROUTER_API_KEY is not configured');
+            // Try to get API key from database first
+            let apiKey = await providerManager.getApiKey('openrouter');
+
+            // Fallback to environment variable
+            if (!apiKey) {
+                apiKey = env.OPENROUTER_API_KEY;
             }
+
+            if (!apiKey) {
+                throw new Error('OPENROUTER_API_KEY is not configured in database or environment');
+            }
+
             this.client = new OpenAI({
-                apiKey: env.OPENROUTER_API_KEY,
+                apiKey,
                 baseURL: 'https://openrouter.ai/api/v1',
             });
         }
@@ -32,7 +42,7 @@ export class OpenRouterClient implements LLMClient {
         request: LLMRequest,
         model: ModelConfig,
     ): Promise<Omit<LLMResponse, 'routingSummary'>> {
-        const client = this.getClient();
+        const client = await this.getClient();
 
         logger.debug('Calling OpenRouter API', {
             model: model.apiModelName,

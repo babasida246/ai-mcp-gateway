@@ -4,6 +4,7 @@ import { LLMRequest, LLMResponse } from '../../mcp/types.js';
 import { ModelConfig } from '../../config/models.js';
 import { env } from '../../config/env.js';
 import { logger } from '../../logging/logger.js';
+import { providerManager } from '../../config/provider-manager.js';
 
 /**
  * OpenAI GPT LLM client
@@ -11,12 +12,21 @@ import { logger } from '../../logging/logger.js';
 export class OpenAIClient implements LLMClient {
     private client: OpenAI | null = null;
 
-    private getClient(): OpenAI {
+    private async getClient(): Promise<OpenAI> {
         if (!this.client) {
-            if (!env.OPENAI_API_KEY) {
-                throw new Error('OPENAI_API_KEY is not configured');
+            // Try to get API key from database first
+            let apiKey = await providerManager.getApiKey('openai');
+
+            // Fallback to environment variable
+            if (!apiKey) {
+                apiKey = env.OPENAI_API_KEY;
             }
-            this.client = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+
+            if (!apiKey) {
+                throw new Error('OPENAI_API_KEY is not configured in database or environment');
+            }
+
+            this.client = new OpenAI({ apiKey });
         }
         return this.client;
     }
@@ -29,7 +39,7 @@ export class OpenAIClient implements LLMClient {
         request: LLMRequest,
         model: ModelConfig,
     ): Promise<Omit<LLMResponse, 'routingSummary'>> {
-        const client = this.getClient();
+        const client = await this.getClient();
 
         logger.debug('Calling OpenAI API', {
             model: model.apiModelName,

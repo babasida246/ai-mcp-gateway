@@ -19,12 +19,19 @@ interface HealthData {
 
 interface ProviderConfig {
   id: string;
-  name: string;
-  description: string;
-  apiKey: string;
+  provider_name: string;
+  display_name: string;
   enabled: boolean;
-  baseUrl?: string;
-  isDefault: boolean;
+  api_key: string | null;
+  api_endpoint: string | null;
+  config: Record<string, any> | null;
+  health_status: boolean | null;
+  last_health_check: string | null;
+  created_at: string;
+  updated_at: string;
+  // Legacy fields for backward compatibility with custom providers
+  description?: string;
+  isDefault?: boolean;
   apiFunction?: string;
 }
 
@@ -39,11 +46,13 @@ export default function Providers() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProvider, setNewProvider] = useState<Partial<ProviderConfig>>({
     id: '',
-    name: '',
+    provider_name: '',
+    display_name: '',
     description: '',
-    apiKey: '',
-    baseUrl: '',
+    api_key: '',
+    api_endpoint: '',
     apiFunction: '',
+    enabled: true,
   });
 
   useEffect(() => {
@@ -55,7 +64,9 @@ export default function Providers() {
   async function loadProviders() {
     try {
       const response = await axios.get(`${API_BASE}/v1/providers`);
-      setProviderConfigs(response.data.providers);
+      if (response.data?.success && Array.isArray(response.data.providers)) {
+        setProviderConfigs(response.data.providers);
+      }
       setError(null);
       setLoading(false);
     } catch (err) {
@@ -79,14 +90,13 @@ export default function Providers() {
     if (!provider) return;
 
     try {
-      await axios.put(`${API_BASE}/v1/providers/${id}`, {
-        enabled: !provider.enabled
-      });
+      const action = provider.enabled ? 'disable' : 'enable';
+      await axios.post(`${API_BASE}/v1/providers/${provider.provider_name}/${action}`);
       
       setProviderConfigs(configs =>
         configs.map(p => p.id === id ? { ...p, enabled: !p.enabled } : p)
       );
-      setSaveStatus(`Provider ${id} ${provider.enabled ? 'disabled' : 'enabled'}`);
+      setSaveStatus(`Provider ${provider.display_name} ${provider.enabled ? 'disabled' : 'enabled'}`);
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (err) {
       console.error('Failed to toggle provider:', err);
@@ -99,12 +109,20 @@ export default function Providers() {
     if (!provider) return;
 
     try {
-      await axios.put(`${API_BASE}/v1/providers/${id}`, {
-        apiKey: provider.apiKey,
-        baseUrl: provider.baseUrl,
+      // Update API key if changed
+      if (provider.api_key) {
+        await axios.put(`${API_BASE}/v1/providers/${provider.provider_name}/api-key`, {
+          apiKey: provider.api_key
+        });
+      }
+      
+      // Update config if changed
+      await axios.patch(`${API_BASE}/v1/providers/${provider.provider_name}`, {
+        api_endpoint: provider.api_endpoint,
+        config: provider.config,
       });
       
-      setSaveStatus(`Configuration saved for ${id}`);
+      setSaveStatus(`Configuration saved for ${provider.display_name}`);
       setEditingProvider(null);
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (err) {
@@ -114,23 +132,25 @@ export default function Providers() {
   }
 
   async function addCustomProvider() {
-    if (!newProvider.id || !newProvider.name || !newProvider.baseUrl) {
-      setError('Please fill in all required fields (ID, Name, Base URL)');
+    if (!newProvider.id || !newProvider.provider_name || !newProvider.api_endpoint) {
+      setError('Please fill in all required fields (ID, Provider Name, Base URL)');
       return;
     }
 
     try {
       await axios.post(`${API_BASE}/v1/providers`, newProvider);
       
-      setSaveStatus(`Custom provider ${newProvider.name} added successfully`);
+      setSaveStatus(`Custom provider ${newProvider.display_name || newProvider.provider_name} added successfully`);
       setShowAddForm(false);
       setNewProvider({
         id: '',
-        name: '',
+        provider_name: '',
+        display_name: '',
         description: '',
-        apiKey: '',
-        baseUrl: '',
+        api_key: '',
+        api_endpoint: '',
         apiFunction: '',
+        enabled: true,
       });
       setTimeout(() => setSaveStatus(null), 3000);
       loadProviders(); // Reload providers
@@ -141,12 +161,15 @@ export default function Providers() {
   }
 
   async function deleteProvider(id: string) {
-    if (!confirm(`Are you sure you want to delete provider "${id}"?`)) return;
+    const provider = providerConfigs.find(p => p.id === id);
+    if (!provider) return;
+    
+    if (!confirm(`Are you sure you want to delete provider "${provider.display_name}"?`)) return;
 
     try {
-      await axios.delete(`${API_BASE}/v1/providers/${id}`);
+      await axios.delete(`${API_BASE}/v1/providers/${provider.provider_name}`);
       
-      setSaveStatus(`Provider ${id} deleted successfully`);
+      setSaveStatus(`Provider ${provider.display_name} deleted successfully`);
       setTimeout(() => setSaveStatus(null), 3000);
       loadProviders(); // Reload providers
     } catch (err) {
@@ -215,24 +238,24 @@ export default function Providers() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Provider ID <span className="text-red-400">*</span>
+                  Provider Name (ID) <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="text"
-                  value={newProvider.id || ''}
-                  onChange={(e) => setNewProvider({ ...newProvider, id: e.target.value })}
+                  value={newProvider.provider_name || ''}
+                  onChange={(e) => setNewProvider({ ...newProvider, provider_name: e.target.value })}
                   className="input w-full"
                   placeholder="e.g., custom-llm"
                 />
               </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Provider Name <span className="text-red-400">*</span>
+                  Display Name <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="text"
-                  value={newProvider.name || ''}
-                  onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })}
+                  value={newProvider.display_name || ''}
+                  onChange={(e) => setNewProvider({ ...newProvider, display_name: e.target.value })}
                   className="input w-full"
                   placeholder="e.g., Custom LLM Provider"
                 />
@@ -256,8 +279,8 @@ export default function Providers() {
               </label>
               <input
                 type="text"
-                value={newProvider.baseUrl || ''}
-                onChange={(e) => setNewProvider({ ...newProvider, baseUrl: e.target.value })}
+                value={newProvider.api_endpoint || ''}
+                onChange={(e) => setNewProvider({ ...newProvider, api_endpoint: e.target.value })}
                 className="input w-full font-mono text-sm"
                 placeholder="https://api.example.com/v1"
               />
@@ -268,8 +291,8 @@ export default function Providers() {
               </label>
               <input
                 type="password"
-                value={newProvider.apiKey || ''}
-                onChange={(e) => setNewProvider({ ...newProvider, apiKey: e.target.value })}
+                value={newProvider.api_key || ''}
+                onChange={(e) => setNewProvider({ ...newProvider, api_key: e.target.value })}
                 className="input w-full font-mono text-sm"
                 placeholder="API key if required"
               />
@@ -328,7 +351,7 @@ export default function Providers() {
       {/* Provider Cards */}
       <div className="grid grid-cols-1 gap-6">
         {providerConfigs.map((provider) => {
-          const isHealthy = health?.providers[provider.id as keyof ProviderStatus];
+          const isHealthy = health?.healthyProviders?.includes(provider.provider_name) || provider.health_status;
           const isEditing = editingProvider === provider.id;
           
           return (
@@ -336,7 +359,7 @@ export default function Providers() {
               <div className="flex items-start justify-between mb-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-xl font-bold text-white">{provider.name}</h3>
+                    <h3 className="text-xl font-bold text-white">{provider.display_name}</h3>
                     {isHealthy !== undefined && (
                       <div className={`badge ${isHealthy ? 'badge-success' : 'badge-error'}`}>
                         {isHealthy ? (
@@ -365,7 +388,7 @@ export default function Providers() {
                         </>
                       )}
                     </div>
-                    {!provider.isDefault && (
+                    {provider.isDefault === false && (
                       <span className="badge badge-info text-xs">Custom</span>
                     )}
                   </div>
@@ -414,8 +437,8 @@ export default function Providers() {
                     <div className="flex items-center gap-2">
                       <input
                         type={showApiKeys[provider.id] ? 'text' : 'password'}
-                        value={provider.apiKey}
-                        onChange={(e) => updateProviderField(provider.id, 'apiKey', e.target.value)}
+                        value={provider.api_key || ''}
+                        onChange={(e) => updateProviderField(provider.id, 'api_key', e.target.value)}
                         className="input flex-1 font-mono text-sm"
                         placeholder="Enter API key..."
                       />
@@ -432,22 +455,22 @@ export default function Providers() {
                     </div>
                   </div>
 
-                  {provider.baseUrl !== undefined && (
+                  {provider.api_endpoint && (
                     <div>
                       <label className="block text-sm font-semibold text-slate-300 mb-2">
                         Base URL
                       </label>
                       <input
                         type="text"
-                        value={provider.baseUrl}
-                        onChange={(e) => updateProviderField(provider.id, 'baseUrl', e.target.value)}
+                        value={provider.api_endpoint}
+                        onChange={(e) => updateProviderField(provider.id, 'api_endpoint', e.target.value)}
                         className="input w-full font-mono text-sm"
                         placeholder="https://api.example.com"
                       />
                     </div>
                   )}
 
-                  {!provider.isDefault && provider.apiFunction !== undefined && (
+                  {provider.isDefault === false && provider.apiFunction !== undefined && (
                     <div>
                       <label className="block text-sm font-semibold text-slate-300 mb-2">
                         API Function
@@ -483,20 +506,20 @@ export default function Providers() {
                 <div className="space-y-3 pt-4 border-t border-slate-700">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-400">Status</span>
-                    <span className={isHealthy ? 'text-green-400' : 'text-red-400'}>
-                      {isHealthy ? 'Connected' : 'Disconnected'}
+                    <span className={provider.health_status ? 'text-green-400' : 'text-red-400'}>
+                      {provider.health_status ? 'Connected' : 'Disconnected'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-400">API Key</span>
                     <span className="text-white font-mono text-xs">
-                      {provider.apiKey ? `${provider.apiKey.substring(0, 10)}...` : 'Not configured'}
+                      {provider.api_key ? `${provider.api_key.substring(0, 10)}...` : 'Not configured'}
                     </span>
                   </div>
-                  {provider.baseUrl && (
+                  {provider.api_endpoint && (
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-slate-400">Base URL</span>
-                      <span className="text-white font-mono text-xs">{provider.baseUrl}</span>
+                      <span className="text-white font-mono text-xs">{provider.api_endpoint}</span>
                     </div>
                   )}
                 </div>

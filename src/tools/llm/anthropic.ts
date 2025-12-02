@@ -4,6 +4,7 @@ import { LLMRequest, LLMResponse } from '../../mcp/types.js';
 import { ModelConfig } from '../../config/models.js';
 import { env } from '../../config/env.js';
 import { logger } from '../../logging/logger.js';
+import { providerManager } from '../../config/provider-manager.js';
 
 /**
  * Anthropic Claude LLM client
@@ -11,12 +12,21 @@ import { logger } from '../../logging/logger.js';
 export class AnthropicClient implements LLMClient {
     private client: Anthropic | null = null;
 
-    private getClient(): Anthropic {
+    private async getClient(): Promise<Anthropic> {
         if (!this.client) {
-            if (!env.ANTHROPIC_API_KEY) {
-                throw new Error('ANTHROPIC_API_KEY is not configured');
+            // Try to get API key from database first
+            let apiKey = await providerManager.getApiKey('anthropic');
+
+            // Fallback to environment variable
+            if (!apiKey) {
+                apiKey = env.ANTHROPIC_API_KEY;
             }
-            this.client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+
+            if (!apiKey) {
+                throw new Error('ANTHROPIC_API_KEY is not configured in database or environment');
+            }
+
+            this.client = new Anthropic({ apiKey });
         }
         return this.client;
     }
@@ -29,7 +39,7 @@ export class AnthropicClient implements LLMClient {
         request: LLMRequest,
         model: ModelConfig,
     ): Promise<Omit<LLMResponse, 'routingSummary'>> {
-        const client = this.getClient();
+        const client = await this.getClient();
 
         logger.debug('Calling Anthropic API', {
             model: model.apiModelName,
