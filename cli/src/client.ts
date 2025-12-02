@@ -67,7 +67,7 @@ export class MCPClient {
         // Create axios instance with default config
         this.client = axios.create({
             baseURL: this.endpoint,
-            timeout: 60000, // 60 second timeout
+            timeout: 1800000, // 30 minute timeout for complex prompts
             headers: {
                 'Content-Type': 'application/json',
                 ...(key ? { 'Authorization': `Bearer ${key}` } : {}),

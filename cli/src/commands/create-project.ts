@@ -12,7 +12,7 @@ import { createDefaultConfig, saveProjectConfig, loadProjectConfig } from '../pr
 
 interface ProjectConfig {
     description: string;
-    budget: number; // USD, 0 = unlimited
+    budget: number; // USD, 0 = free tier (L0 only)
     maxLayer: 'L0' | 'L1' | 'L2' | 'L3';
     enableTests: boolean;
     debugMode: boolean;
@@ -44,12 +44,62 @@ export async function createProjectCommand(
 
     const client = new MCPClient(options.endpoint, options.apiKey);
 
+    // Auto-detect mcp-instructor.md if no description provided
+    let finalDescription = description;
+    if (!finalDescription) {
+        const instructorPath = 'mcp-instructor.md';
+        if (fs.existsSync(instructorPath)) {
+            console.log(chalk.green(`📖 Found ${instructorPath}, using as project description...`));
+            try {
+                finalDescription = fs.readFileSync(instructorPath, 'utf-8').trim();
+                console.log(chalk.dim(`   Loaded ${finalDescription.length} characters from instructor file`));
+            } catch (error) {
+                console.log(chalk.yellow(`⚠️  Could not read ${instructorPath}, falling back to interactive input`));
+            }
+        } else {
+            // Try to auto-generate project context if no description and no instructor file
+            console.log(chalk.yellow('🔍 No description provided and no mcp-instructor.md found.'));
+            console.log(chalk.yellow('Analyzing existing project files to generate context...'));
+            
+            try {
+                const { readProjectContext, hasMinimalProjectContext } = await import('../utils/projectContext.js');
+                const projectContext = readProjectContext();
+                
+                if (!hasMinimalProjectContext(projectContext)) {
+                    const { summarizeProject } = await import('./summarize.js');
+                    await summarizeProject({ 
+                        output: 'temp-project-summary.md',
+                        budget: 0,
+                        verbose: true 
+                    });
+                    
+                    if (fs.existsSync('temp-project-summary.md')) {
+                        const summaryContent = fs.readFileSync('temp-project-summary.md', 'utf-8');
+                        const { createMissingProjectFiles } = await import('../utils/projectContext.js');
+                        await createMissingProjectFiles(process.cwd(), summaryContent, true);
+                        
+                        // Use the generated instructor file
+                        if (fs.existsSync(instructorPath)) {
+                            finalDescription = fs.readFileSync(instructorPath, 'utf-8').trim();
+                            console.log(chalk.green('📖 Generated and loaded mcp-instructor.md'));
+                        }
+                        
+                        // Clean up temp file
+                        try { fs.unlinkSync('temp-project-summary.md'); } catch {}
+                    }
+                }
+            } catch (error) {
+                console.log(chalk.yellow('⚠️  Could not auto-generate project context.'));
+            }
+        }
+    }
+
     // Get project configuration
-    const config = await getProjectConfig(description, options);
+    const config = await getProjectConfig(finalDescription, options);
 
     console.log(chalk.yellow('\n📋 Project Configuration:'));
     console.log(chalk.dim(`  Description: ${config.description}`));
-    console.log(chalk.dim(`  Budget: ${config.budget === 0 ? 'Unlimited' : config.budget <= 0.000001 ? 'Free (L0 only)' : '$' + config.budget.toFixed(2)}`));
+    console.log(chalk.dim(`  Budget: ${config.budget === 0 ? 'Free tier (L0 only)' : '$' + config.budget.toFixed(2)}`));
     console.log(chalk.dim(`  Max Layer: ${config.maxLayer}`));
     console.log(chalk.dim(`  Engine: ${config.useClaudeCode ? 'Claude Code' : 'Multi-layer API'}`));
     console.log(chalk.dim(`  Tests: ${config.enableTests ? 'Yes' : 'No'}`));
@@ -351,7 +401,7 @@ async function getProjectConfig(
 
     let config: ProjectConfig = {
         description: '',
-        budget: 0.000001, // Free tier by default
+        budget: 0, // Free tier by default
         maxLayer: 'L0', // L0 (free) by default
         enableTests: true,
         debugMode: false,
@@ -380,16 +430,31 @@ async function getProjectConfig(
             config.useClaudeCode = options.useClaudeCode as boolean;
         }
 
-        // Get budget (if not provided)
+        // Get budget (if not provided)  
         if (options.budget === undefined) {
-            const budgetStr = await question(chalk.yellow('Budget (USD, 0 for no limit) [0.000001]: '));
-            if (budgetStr.toLowerCase() === 'free' || budgetStr === '' || budgetStr === '0') {
-                config.budget = 0.000001; // Very small budget to force L0 only
+            const budgetStr = await question(chalk.yellow('Budget (USD, 0 for free tier) [0]: '));
+            if (budgetStr === '' || budgetStr === '0' || budgetStr.toLowerCase() === 'free') {
+                config.budget = 0; // Free tier
             } else {
-                config.budget = parseFloat(budgetStr) || 0.000001;
+                const parsedBudget = parseFloat(budgetStr);
+                if (isNaN(parsedBudget) || parsedBudget < 0) {
+                    console.log(chalk.yellow('⚠️  Invalid budget, using free tier'));
+                    config.budget = 0;
+                } else {
+                    config.budget = parsedBudget;
+                }
             }
         } else {
             config.budget = options.budget as number;
+            if (config.budget < 0) {
+                config.budget = 0; // No negative budgets
+            }
+        }
+
+        // Free tier restrictions: only L0, no escalation
+        if (config.budget === 0) {
+            config.maxLayer = 'L0';
+            console.log(chalk.dim('   Free tier: Limited to L0, no escalation'));
         }
 
         // Get max layer (if not provided)

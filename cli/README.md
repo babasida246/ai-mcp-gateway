@@ -4,18 +4,21 @@ A powerful command-line interface for the MCP Gateway with AI-powered project sc
 
 ## ✨ Features
 
-- 🤖 **Interactive Chat** - Real-time AI conversation with context awareness
-- 📝 **Code Analysis** - Expert code reviews and suggestions
+- 🤖 **Interactive Chat** - Real-time AI conversation with project context awareness
+- 📝 **Code Analysis** - Expert code reviews and suggestions with project history tracking  
 - 🔧 **Diff Generation** - Generate unified diff patches for code changes
-- 🚀 **Project Creation** - AI-powered project scaffolding with budget tracking
+- 🚀 **Project Creation** - AI-powered project scaffolding with auto-detection capabilities
+- 📊 **Project Summarization** - Comprehensive project analysis and documentation generation
 - 🎨 **Syntax Highlighting** - Colored terminal output for better readability
 - 🔌 **Pipe Support** - Seamless integration with Unix pipes
-- 📊 **Context Aware** - Includes git status, file listings, and workspace context
-- 💰 **Budget Tracking** - Set per-project budgets and enforce cost limits
+- 📋 **Smart Context Reading** - Auto-loads SKETCH.md, ROADMAP.md, mcp-instructor.md files
+- 📝 **Auto-Documentation** - Creates missing project files when context is incomplete
+- 🧠 **History Tracking** - Maintains project-coding-history.md for all tasks
+- 💰 **Budget Management** - Free tier default with intelligent escalation to Claude Code
 - 🎯 **Layer Control** - Choose maximum model tier to control costs
-- ⚠️ **Escalation Alerts** - Manual confirmation for paid model usage
+- ⚠️ **Escalation Flexibility** - Claude Code allowed even with free budget
 - 🧠 **Claude Code Integration** - Seamlessly switch to Claude Code for complex tasks
-- 📐 **3-Phase Planning** - Automatic project planning documents (SKETCH, LOGIC_FLOW, ROADMAP)
+- 📐 **Auto-File Generation** - Creates SKETCH.md, ROADMAP.md, LOGIC_FLOW.md from analysis
 
 ## 🧠 Claude Code Engine Mode
 
@@ -275,6 +278,54 @@ mcp create-project "Full-stack Next.js app"
 
 # Quick mode (no prompts, use defaults)
 mcp create-project "CLI tool" --budget 0 --max-layer L0 --no-tests
+```
+
+### Summarize Command (NEW!)
+
+Generate comprehensive project summary and create missing documentation files:
+
+```bash
+mcp summarize
+```
+
+**With options:**
+```bash
+# Custom output file
+mcp summarize -o PROJECT-OVERVIEW.md
+
+# Verbose mode
+mcp summarize -v
+
+# Custom model
+mcp summarize --model gpt-4
+```
+
+**What it does:**
+- Analyzes entire project structure and codebase
+- Reads existing documentation (SKETCH.md, ROADMAP.md, etc.)
+- Creates missing project files automatically:
+  - `SKETCH.md` - Project overview and architecture
+  - `ROADMAP.md` - Development roadmap and next steps  
+  - `LOGIC_FLOW.md` - System logic and data flow
+  - `mcp-instructor.md` - Project instructions and guidelines
+- Generates comprehensive markdown summary with:
+  - Project overview and technology stack
+  - Architecture analysis
+  - Code statistics and file breakdown
+  - Development history (if available)
+  - Recommendations for next steps
+
+**Example output:**
+```
+📊 Analyzing project for summary generation...
+🔍 Project context files missing. Generating project summary first...
+✅ Created SKETCH.md
+✅ Created ROADMAP.md  
+✅ Created LOGIC_FLOW.md
+✅ Created mcp-instructor.md
+✅ Project summary generated successfully!
+📄 Summary saved to: PROJECT-SUMMARY-2024-12-02.md
+💰 Cost: $0.0012
 ```
 
 ## Examples

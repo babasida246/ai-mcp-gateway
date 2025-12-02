@@ -23,6 +23,7 @@ import { diffCommand } from './commands/diff.js';
 import { analyzeCommand } from './commands/analyze.js';
 import { createProjectCommand } from './commands/create-project.js';
 import { claudeCommand } from './commands/claude.js';
+import { summarizeProject } from './commands/summarize.js';
 
 const program = new Command();
 
@@ -161,6 +162,24 @@ program
         });
     });
 
+// Summarize command - Generate comprehensive project summary
+program
+    .command('summarize')
+    .description('Generate comprehensive project summary by analyzing all files and history')
+    .option('-o, --output <file>', 'Output file for summary (default: PROJECT-SUMMARY-YYYY-MM-DD.md)')
+    .option('-b, --budget <amount>', 'Budget for AI analysis (USD)', parseFloat)
+    .option('-m, --model <model>', 'Specific model to use for analysis')
+    .option('-v, --verbose', 'Show verbose analysis process')
+    .action(async (options: Record<string, unknown>) => {
+        const globalOpts = program.opts() as Record<string, unknown>;
+        await summarizeProject({
+            output: options.output as string | undefined,
+            budget: options.budget as number | undefined,
+            model: options.model as string | undefined,
+            verbose: options.verbose as boolean | undefined,
+        });
+    });
+
 // Help command
 program
     .command('help')
@@ -212,6 +231,9 @@ function printDetailedHelp(): void {
     console.log(chalk.white('  mcp create-project <description>'));
     console.log(chalk.dim('    Create complete project with AI (structure, tests, CI/CD).\n'));
 
+    console.log(chalk.white('  mcp summarize'));
+    console.log(chalk.dim('    Generate comprehensive project summary analyzing all files and history.\n'));
+
     console.log(chalk.white('  mcp diff <file> [-p "prompt"]'));
     console.log(chalk.dim('    Request AI to generate unified diff patch.\n'));
 
@@ -239,6 +261,9 @@ function printDetailedHelp(): void {
 
     console.log(chalk.green('  # Create a new project'));
     console.log(chalk.dim('  $ mcp create-project "React dashboard with authentication"\n'));
+
+    console.log(chalk.green('  # Generate project summary'));
+    console.log(chalk.dim('  $ mcp summarize -v\n'));
 
     console.log(chalk.green('  # Analyze from stdin'));
     console.log(chalk.dim('  $ cat myfile.js | mcp code -\n'));

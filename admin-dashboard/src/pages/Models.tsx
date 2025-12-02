@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Power, PowerOff, RefreshCw, Plus, Trash2, Edit2, Save, X } from 'lucide-react';
+import { Power, PowerOff, RefreshCw, Plus, Trash2, Edit2, Save, X, ArrowUp, ArrowDown } from 'lucide-react';
 import axios from 'axios';
 
 const API_BASE = 'http://localhost:3000';
@@ -14,6 +14,7 @@ interface Model {
   pricePer1kOutputTokens?: number;
   contextWindow?: number;
   enabled: boolean;
+  priority?: number; // New: model priority within layer
   capabilities?: {
     code?: boolean;
     general?: boolean;
@@ -176,6 +177,52 @@ export default function Models() {
   function cancelEditing() {
     setEditingLayer(null);
     setNewModel({ provider: '', apiModelName: '' });
+  }
+
+  // Model ordering functions
+  async function moveModel(layerName: string, modelId: string, direction: 'up' | 'down') {
+    const layer = layers[layerName];
+    if (!layer) return;
+
+    const models = [...layer.models];
+    const currentIndex = models.findIndex(m => m.id === modelId);
+    
+    if (currentIndex === -1) return;
+    
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    
+    if (newIndex < 0 || newIndex >= models.length) return;
+
+    // Swap models
+    [models[currentIndex], models[newIndex]] = [models[newIndex], models[currentIndex]];
+    
+    // Update priorities based on new order
+    models.forEach((model, index) => {
+      model.priority = index;
+    });
+
+    // Update local state immediately
+    setLayers(prev => ({
+      ...prev,
+      [layerName]: {
+        ...prev[layerName],
+        models: models
+      }
+    }));
+
+    try {
+      // Save new order to backend
+      await axios.put(`${API_BASE}/v1/models/${modelId}`, {
+        ...models[newIndex],
+        priority: newIndex
+      });
+      setSaveStatus(`Model order updated`);
+      setTimeout(() => setSaveStatus(null), 2000);
+    } catch (err) {
+      console.error('Failed to update model order:', err);
+      setError('Failed to update model order');
+      loadLayers(); // Reload to restore original order
+    }
   }
 
   return (
@@ -342,13 +389,20 @@ export default function Models() {
                     Models ({layer.models.length})
                   </h3>
                   <div className="grid grid-cols-1 gap-3">
-                    {layer.models.map((model) => (
+                    {layer.models
+                      .sort((a, b) => (a.priority || 0) - (b.priority || 0))
+                      .map((model, index) => (
                       <div
                         key={model.id}
                         className="flex items-center justify-between p-4 bg-slate-700/50 rounded-lg border border-slate-600 hover:border-slate-500 transition-colors group"
                       >
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
+                            {isEditing && layer.models.length > 1 && (
+                              <span className="inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-indigo-400 bg-indigo-500/20 rounded-full">
+                                {index + 1}
+                              </span>
+                            )}
                             <span className="text-white font-semibold">{model.apiModelName}</span>
                             <span className={`badge ${model.enabled ? 'badge-success' : 'badge-error'} text-xs`}>
                               {model.enabled ? 'Enabled' : 'Disabled'}
@@ -357,9 +411,34 @@ export default function Models() {
                           <div className="flex items-center gap-2 text-xs text-slate-400">
                             <span className="badge badge-info">{model.provider}</span>
                             <span>ID: {model.id}</span>
+                            {isEditing && layer.models.length > 1 && (
+                              <span className="text-indigo-400">Priority: {model.priority || 0}</span>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
+                          {/* Model Ordering Controls */}
+                          {isEditing && layer.models.length > 1 && (
+                            <>
+                              <button
+                                onClick={() => moveModel(layerName, model.id, 'up')}
+                                disabled={layer.models[0].id === model.id}
+                                className="btn-secondary text-sm bg-indigo-500/20 text-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Move model up in priority"
+                              >
+                                <ArrowUp className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => moveModel(layerName, model.id, 'down')}
+                                disabled={layer.models[layer.models.length - 1].id === model.id}
+                                className="btn-secondary text-sm bg-indigo-500/20 text-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Move model down in priority"
+                              >
+                                <ArrowDown className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+                          
                           <button
                             onClick={() => openEditModal(model)}
                             className="btn-secondary text-sm bg-blue-500/20 text-blue-400"

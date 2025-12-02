@@ -15,6 +15,18 @@ import {
     executeWithClaudeCode,
     createTaskSummary
 } from '../utils/claudeIntegration.js';
+import {
+    readProjectContext,
+    buildContextualPrompt,
+    displayContextSummary,
+    appendToHistory,
+    updateProjectFiles,
+    ProjectContextFiles,
+    ProjectHistoryEntry,
+    createSimpleTaskSummary,
+    hasMinimalProjectContext,
+    createMissingProjectFiles
+} from '../utils/projectContext.js';
 
 interface CodeContext {
     relatedFiles: string[];
@@ -39,6 +51,50 @@ export async function codeCommand(
     }
 ): Promise<void> {
     const client = new MCPClient(options.endpoint, options.apiKey);
+
+    // Read project context files
+    console.log(chalk.dim('🔍 Reading project context...'));
+    const projectContext = readProjectContext();
+    
+    // Check if we need to auto-generate project context files
+    if (!hasMinimalProjectContext(projectContext)) {
+        console.log(chalk.yellow('📝 Project context files missing. Generating project summary first...'));
+        
+        try {
+            // Import and run summarize functionality
+            const { summarizeProject } = await import('./summarize.js');
+            
+            // Generate summary with free budget
+            await summarizeProject({ 
+                output: 'temp-project-summary.md',
+                budget: 0, // Free tier for initial analysis
+                verbose: true 
+            });
+            
+            // Read the generated summary
+            const summaryPath = 'temp-project-summary.md';
+            if (existsSync(summaryPath)) {
+                const summaryContent = readFileSync(summaryPath, 'utf-8');
+                
+                // Create missing project files based on summary
+                await createMissingProjectFiles(process.cwd(), summaryContent, true);
+                
+                // Clean up temporary file
+                try {
+                    require('fs').unlinkSync(summaryPath);
+                } catch {}
+                
+                // Re-read project context with newly created files
+                console.log(chalk.green('✅ Project context files created. Re-reading context...'));
+                const updatedContext = readProjectContext();
+                Object.assign(projectContext, updatedContext);
+            }
+        } catch (error) {
+            console.log(chalk.yellow('⚠️  Could not auto-generate project context. Continuing without...'));
+        }
+    }
+    
+    displayContextSummary(projectContext);
 
     let fileContent: string;
     let fileName: string;
@@ -92,8 +148,9 @@ export async function codeCommand(
         context.context.language = language;
     }
 
-    // Build enhanced message with context (GitHub Copilot style)
-    let fullMessage = buildEnhancedPrompt(prompt, fileName, language, fileContent, codeContext, options.create);
+    // Build enhanced message with context (GitHub Copilot style + project context)
+    let basePrompt = buildEnhancedPrompt(prompt, fileName, language, fileContent, codeContext, options.create);
+    let fullMessage = buildContextualPrompt(basePrompt, projectContext, 'code');
 
     try {
         let response = await client.send({
@@ -112,7 +169,11 @@ export async function codeCommand(
                 options.useClaudeCode
             );
 
-            if (shouldUse && projectRoot) {
+            // Allow Claude Code escalation even with free budget if Claude Code is enabled
+            const budgetAllowsEscalation = response.cost ? response.cost > 0 : false;
+            const claudeCodeAvailable = shouldUse && (projectRoot || options.useClaudeCode);
+
+            if (claudeCodeAvailable && (!budgetAllowsEscalation || shouldUse)) {
                 // Offer Claude Code instead of escalation
                 const taskSummary = createTaskSummary('code', filePath, options.prompt);
                 const useClaudeCode = await promptClaudeCodeInsteadOfEscalation(
@@ -122,9 +183,9 @@ export async function codeCommand(
                     response.escalationReason || 'Quality improvement needed'
                 );
 
-                if (useClaudeCode) {
+                if (useClaudeCode && (projectRoot || options.useClaudeCode)) {
                     // Launch Claude Code and exit
-                    await executeWithClaudeCode(taskSummary, projectRoot);
+                    await executeWithClaudeCode(taskSummary, projectRoot || process.cwd());
                     process.exit(0);
                 }
                 // If user declined Claude Code, continue with normal escalation below
@@ -152,6 +213,27 @@ export async function codeCommand(
         }
 
         printResponse(response, codeContext, options.create, options.output);
+
+        // Track task in project history
+        try {
+            const historyEntry: ProjectHistoryEntry = {
+                timestamp: new Date().toISOString(),
+                task: options.create ? 'Code Generation' : 'Code Review',
+                summary: createSimpleTaskSummary(options.create ? 'create' : 'review', fileName, prompt),
+                budgetUsed: response.cost || 0,
+                budgetRemaining: 0, // TODO: Track actual budget
+                model: response.model,
+                layer: response.metadata?.layer
+            };
+
+            appendToHistory(process.cwd(), historyEntry);
+        } catch (error) {
+            // Don't fail if history tracking fails
+            console.log(chalk.dim('Note: Could not update project history'));
+        }
+
+        // Check if project files need updates based on response
+        // TODO: Implement smart detection of when to update project docs
     } catch (error) {
         process.exit(1);
     }

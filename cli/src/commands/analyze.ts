@@ -13,6 +13,12 @@ import {
     executeWithClaudeCode,
     createTaskSummary
 } from '../utils/claudeIntegration.js';
+import {
+    readProjectContext,
+    hasMinimalProjectContext,
+    createMissingProjectFiles,
+    displayContextSummary
+} from '../utils/projectContext.js';
 
 export async function analyzeCommand(
     pattern: string,
@@ -29,6 +35,50 @@ export async function analyzeCommand(
     console.log(chalk.dim('─'.repeat(50)));
 
     const client = new MCPClient(options.endpoint, options.apiKey);
+
+    // Read project context files
+    console.log(chalk.dim('🔍 Reading project context...'));
+    const projectContext = readProjectContext();
+    
+    // Check if we need to auto-generate project context files
+    if (!hasMinimalProjectContext(projectContext)) {
+        console.log(chalk.yellow('📝 Project context files missing. Generating project summary first...'));
+        
+        try {
+            // Import and run summarize functionality
+            const { summarizeProject } = await import('./summarize.js');
+            
+            // Generate summary with free budget
+            await summarizeProject({ 
+                output: 'temp-project-summary.md',
+                budget: 0, // Free tier for initial analysis
+                verbose: true 
+            });
+            
+            // Read the generated summary
+            const summaryPath = 'temp-project-summary.md';
+            if (fs.existsSync(summaryPath)) {
+                const summaryContent = fs.readFileSync(summaryPath, 'utf-8');
+                
+                // Create missing project files based on summary
+                await createMissingProjectFiles(process.cwd(), summaryContent, true);
+                
+                // Clean up temporary file
+                try {
+                    fs.unlinkSync(summaryPath);
+                } catch {}
+                
+                // Re-read project context with newly created files
+                console.log(chalk.green('✅ Project context files created. Re-reading context...'));
+                const updatedContext = readProjectContext();
+                Object.assign(projectContext, updatedContext);
+            }
+        } catch (error) {
+            console.log(chalk.yellow('⚠️  Could not auto-generate project context. Continuing without...'));
+        }
+    }
+    
+    displayContextSummary(projectContext);
 
     // Find files matching pattern
     console.log(chalk.yellow(`📂 Finding files matching: ${pattern}`));
