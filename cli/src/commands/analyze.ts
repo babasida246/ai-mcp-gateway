@@ -7,6 +7,12 @@ import chalk from 'chalk';
 import * as fs from 'fs';
 import { glob } from 'glob';
 import { MCPClient } from '../client.js';
+import {
+    shouldUseClaudeCode,
+    promptClaudeCodeInsteadOfEscalation,
+    executeWithClaudeCode,
+    createTaskSummary
+} from '../utils/claudeIntegration.js';
 
 export async function analyzeCommand(
     pattern: string,
@@ -16,6 +22,7 @@ export async function analyzeCommand(
         apiKey?: string;
         maxFiles?: number;
         recursive?: boolean;
+        useClaudeCode?: boolean;
     }
 ): Promise<void> {
     console.log(chalk.cyan.bold('\n🔍 MCP Codebase Analyzer\n'));

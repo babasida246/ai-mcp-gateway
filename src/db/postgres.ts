@@ -334,6 +334,16 @@ class Database {
         }
         return this._pool;
     }
+
+    /**
+     * Get a database client from the pool
+     */
+    async getClient() {
+        if (!this._pool) {
+            throw new Error('Database pool not initialized');
+        }
+        return await this._pool.connect();
+    }
 }
 
 // Singleton instance

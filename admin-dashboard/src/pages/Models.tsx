@@ -8,7 +8,18 @@ interface Model {
   id: string;
   provider: string;
   apiModelName: string;
+  layer?: string;
+  relativeCost?: number;
+  pricePer1kInputTokens?: number;
+  pricePer1kOutputTokens?: number;
+  contextWindow?: number;
   enabled: boolean;
+  capabilities?: {
+    code?: boolean;
+    general?: boolean;
+    reasoning?: boolean;
+    vision?: boolean;
+  };
 }
 
 interface Layer {
@@ -21,11 +32,22 @@ interface LayersData {
   [key: string]: Layer;
 }
 
+interface EditModelData {
+  provider: string;
+  apiModelName: string;
+  layer: string;
+  relativeCost: number;
+  pricePer1kInputTokens: number;
+  pricePer1kOutputTokens: number;
+  contextWindow: number;
+}
+
 export default function Models() {
   const [layers, setLayers] = useState<LayersData>({});
   const [, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingLayer, setEditingLayer] = useState<string | null>(null);
+  const [editingModel, setEditingModel] = useState<{ id: string; data: EditModelData } | null>(null);
   const [newModel, setNewModel] = useState({ provider: '', apiModelName: '' });
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
@@ -115,6 +137,40 @@ export default function Models() {
       console.error('Failed to toggle model:', err);
       setError(err instanceof Error ? err.message : 'Failed to toggle model');
     }
+  }
+
+  function openEditModal(model: Model) {
+    setEditingModel({
+      id: model.id,
+      data: {
+        provider: model.provider,
+        apiModelName: model.apiModelName,
+        layer: model.layer || 'L0',
+        relativeCost: model.relativeCost || 0,
+        pricePer1kInputTokens: model.pricePer1kInputTokens || 0,
+        pricePer1kOutputTokens: model.pricePer1kOutputTokens || 0,
+        contextWindow: model.contextWindow || 8192,
+      }
+    });
+  }
+
+  async function saveEditModel() {
+    if (!editingModel) return;
+
+    try {
+      await axios.put(`${API_BASE}/v1/models/${editingModel.id}`, editingModel.data);
+      setSaveStatus(`Model ${editingModel.id} updated`);
+      setTimeout(() => setSaveStatus(null), 3000);
+      setEditingModel(null);
+      loadLayers();
+    } catch (err) {
+      console.error('Failed to update model:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update model');
+    }
+  }
+
+  function closeEditModal() {
+    setEditingModel(null);
   }
 
   function cancelEditing() {
@@ -305,6 +361,13 @@ export default function Models() {
                         </div>
                         <div className="flex items-center gap-2">
                           <button
+                            onClick={() => openEditModal(model)}
+                            className="btn-secondary text-sm bg-blue-500/20 text-blue-400"
+                            title="Edit model details"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => toggleModel(model.id, model.enabled)}
                             className={`btn-secondary text-sm ${!model.enabled ? 'bg-green-500/20 text-green-400' : 'bg-orange-500/20 text-orange-400'}`}
                             title={model.enabled ? 'Disable model' : 'Enable model'}
@@ -347,6 +410,136 @@ export default function Models() {
       {Object.keys(layers).length === 0 && (
         <div className="card p-12 text-center">
           <div className="text-slate-400 text-lg">No layers configured</div>
+        </div>
+      )}
+
+      {/* Edit Model Modal */}
+      {editingModel && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-white">Edit Model</h2>
+                <button onClick={closeEditModal} className="text-slate-400 hover:text-white">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              <p className="text-sm text-slate-400 mt-1">Model ID: {editingModel.id}</p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Provider</label>
+                  <input
+                    type="text"
+                    value={editingModel.data.provider}
+                    onChange={(e) => setEditingModel({ 
+                      ...editingModel, 
+                      data: { ...editingModel.data, provider: e.target.value }
+                    })}
+                    className="input w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">API Model Name</label>
+                  <input
+                    type="text"
+                    value={editingModel.data.apiModelName}
+                    onChange={(e) => setEditingModel({ 
+                      ...editingModel, 
+                      data: { ...editingModel.data, apiModelName: e.target.value }
+                    })}
+                    className="input w-full"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Layer</label>
+                  <select
+                    value={editingModel.data.layer}
+                    onChange={(e) => setEditingModel({ 
+                      ...editingModel, 
+                      data: { ...editingModel.data, layer: e.target.value }
+                    })}
+                    className="input w-full"
+                  >
+                    <option value="L0">L0 - Free/Cheapest</option>
+                    <option value="L1">L1 - Low Cost</option>
+                    <option value="L2">L2 - Medium Cost</option>
+                    <option value="L3">L3 - Premium</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Relative Cost</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={editingModel.data.relativeCost}
+                    onChange={(e) => setEditingModel({ 
+                      ...editingModel, 
+                      data: { ...editingModel.data, relativeCost: parseFloat(e.target.value) || 0 }
+                    })}
+                    className="input w-full"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Price per 1k Input Tokens ($)</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    value={editingModel.data.pricePer1kInputTokens}
+                    onChange={(e) => setEditingModel({ 
+                      ...editingModel, 
+                      data: { ...editingModel.data, pricePer1kInputTokens: parseFloat(e.target.value) || 0 }
+                    })}
+                    className="input w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Price per 1k Output Tokens ($)</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    value={editingModel.data.pricePer1kOutputTokens}
+                    onChange={(e) => setEditingModel({ 
+                      ...editingModel, 
+                      data: { ...editingModel.data, pricePer1kOutputTokens: parseFloat(e.target.value) || 0 }
+                    })}
+                    className="input w-full"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Context Window</label>
+                <input
+                  type="number"
+                  value={editingModel.data.contextWindow}
+                  onChange={(e) => setEditingModel({ 
+                    ...editingModel, 
+                    data: { ...editingModel.data, contextWindow: parseInt(e.target.value) || 8192 }
+                  })}
+                  className="input w-full"
+                />
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-slate-700 flex items-center justify-end gap-3">
+              <button onClick={closeEditModal} className="btn-secondary">
+                Cancel
+              </button>
+              <button onClick={saveEditModel} className="btn-primary flex items-center gap-2">
+                <Save className="w-4 h-4" />
+                Save Changes
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

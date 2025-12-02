@@ -4,6 +4,7 @@ import { db } from './db/postgres.js';
 import { redisCache } from './cache/redis.js';
 import { logger } from './logging/logger.js';
 import { selfImprovement } from './improvement/manager.js';
+import { providerManager } from './config/provider-manager.js';
 
 /**
  * Main entry point for AI MCP Gateway
@@ -13,6 +14,18 @@ async function main() {
     try {
         // Initialize self-improvement tables
         await selfImprovement.initializeTables();
+
+        // Initialize provider configurations from environment
+        if (db.isReady()) {
+            try {
+                await providerManager.initializeFromEnv();
+                logger.info('Provider configurations initialized from environment');
+            } catch (error) {
+                logger.warn('Failed to initialize provider configurations', {
+                    error: error instanceof Error ? error.message : 'Unknown',
+                });
+            }
+        }
 
         // Initialize tracer if database is available
         if (db.isReady()) {

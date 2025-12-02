@@ -4,12 +4,18 @@
 
 import chalk from 'chalk';
 import * as readline from 'readline';
-import { MCPClient } from '../client.js';
-import { displayEscalation } from '../utils/escalation.js';
+import { MCPClient, MCPResponse } from '../client.js';
+import { displayEscalation, promptEscalationConfirm } from '../utils/escalation.js';
+import {
+    shouldUseClaudeCode,
+    promptClaudeCodeInsteadOfEscalation,
+    executeWithClaudeCode,
+    createTaskSummary
+} from '../utils/claudeIntegration.js';
 
 export async function chatCommand(
     message: string | undefined,
-    options: { endpoint?: string; apiKey?: string; interactive?: boolean }
+    options: { endpoint?: string; apiKey?: string; interactive?: boolean; useClaudeCode?: boolean }
 ): Promise<void> {
     const client = new MCPClient(options.endpoint, options.apiKey);
 
@@ -31,11 +37,33 @@ async function sendMessage(client: MCPClient, prompt: string): Promise<void> {
     const context = client.getCurrentContext();
 
     try {
-        const response = await client.send({
+        let response = await client.send({
             mode: 'chat',
             message: prompt,
             ...context,
         });
+
+        // Handle escalation confirmation if required
+        if (response.requiresEscalationConfirm && response.suggestedLayer) {
+            const currentLayer = response.metadata?.layer || 'L0';
+            const shouldEscalate = await promptEscalationConfirm(
+                currentLayer,
+                response.suggestedLayer,
+                response.escalationReason || 'Quality improvement needed'
+            );
+
+            if (shouldEscalate) {
+                console.log(chalk.cyan(`\n🔄 Escalating to ${response.suggestedLayer}...\n`));
+
+                const escalatedMessage = response.optimizedPrompt || prompt;
+
+                response = await client.send({
+                    mode: 'chat',
+                    message: escalatedMessage,
+                    ...context,
+                });
+            }
+        }
 
         printResponse(response);
     } catch (error) {

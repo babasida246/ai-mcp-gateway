@@ -8,6 +8,7 @@ import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
 import { MCPClient } from '../client.js';
+import { createDefaultConfig, saveProjectConfig, loadProjectConfig } from '../projectConfig.js';
 
 interface ProjectConfig {
     description: string;
@@ -16,6 +17,7 @@ interface ProjectConfig {
     enableTests: boolean;
     debugMode: boolean;
     outputDir?: string;
+    useClaudeCode: boolean; // NEW: Claude Code engine preference
 }
 
 interface FileToGenerate {
@@ -34,6 +36,7 @@ export async function createProjectCommand(
         noTests?: boolean;
         debug?: boolean;
         output?: string;
+        useClaudeCode?: boolean; // NEW: Flag to enable Claude Code mode
     }
 ): Promise<void> {
     console.log(chalk.cyan.bold('\n🚀 MCP Project Generator\n'));
@@ -48,6 +51,7 @@ export async function createProjectCommand(
     console.log(chalk.dim(`  Description: ${config.description}`));
     console.log(chalk.dim(`  Budget: ${config.budget === 0 ? 'Unlimited' : config.budget <= 0.000001 ? 'Free (L0 only)' : '$' + config.budget.toFixed(2)}`));
     console.log(chalk.dim(`  Max Layer: ${config.maxLayer}`));
+    console.log(chalk.dim(`  Engine: ${config.useClaudeCode ? 'Claude Code' : 'Multi-layer API'}`));
     console.log(chalk.dim(`  Tests: ${config.enableTests ? 'Yes' : 'No'}`));
     console.log(chalk.dim(`  Debug: ${config.debugMode ? 'Yes' : 'No'}`));
     if (config.outputDir) {
@@ -55,8 +59,51 @@ export async function createProjectCommand(
     }
     console.log();
 
-    // Step 1: Analyze project requirements
-    console.log(chalk.cyan('🔍 Analyzing project requirements...'));
+    // Step 1: Generate planning documents (SKETCH, LOGIC_FLOW, ROADMAP)
+    console.log(chalk.cyan('📐 Generating project planning documents...\n'));
+    const outputDir = config.outputDir || process.cwd();
+
+    // Create mcp.config.json FIRST (before planning documents)
+    const projectName = extractProjectName(config.description);
+    const mcpConfig = createDefaultConfig(
+        projectName,
+        config.description,
+        '0.1.0', // CLI version from package.json
+        config.useClaudeCode
+    );
+
+    // Check if config already exists
+    const existingConfig = await loadProjectConfig(outputDir);
+    if (existingConfig) {
+        console.log(chalk.yellow(`\n⚠️  Found existing ${chalk.bold('mcp.config.json')}`));
+        console.log(chalk.dim(`   Project: ${existingConfig.projectName}`));
+        console.log(chalk.dim(`   Engine: ${existingConfig.engine}`));
+        console.log(chalk.dim(`   Created: ${new Date(existingConfig.createdAt).toLocaleString()}`));
+        console.log(chalk.yellow(`   Reusing existing configuration.\n`));
+    } else {
+        await saveProjectConfig(outputDir, mcpConfig);
+    }
+
+    const planningDocs = await generatePlanningDocuments(client, config, outputDir);
+
+    if (!planningDocs.success) {
+        console.log(chalk.red('\n❌ Failed to generate planning documents'));
+        process.exit(1);
+    }
+
+    console.log(chalk.green('\n✓ Planning documents created!'));
+    console.log(chalk.dim(`  📄 ${planningDocs.files.join('\n  📄 ')}`));
+    console.log(chalk.yellow('\n💡 Review the planning documents before proceeding with generation.\n'));
+
+    // Confirm before continuing
+    const continueAfterPlanning = await confirmStep('Proceed with project analysis?');
+    if (!continueAfterPlanning) {
+        console.log(chalk.yellow('\n⚠️  Stopped at planning phase. Review the documents and run again when ready.'));
+        process.exit(0);
+    }
+
+    // Step 2: Analyze project requirements
+    console.log(chalk.cyan('\n🔍 Analyzing project requirements...'));
     const projectPlan = await analyzeProjectRequirements(client, config);
 
     if (!projectPlan || projectPlan.files.length === 0) {
@@ -72,17 +119,16 @@ export async function createProjectCommand(
     });
 
     // Confirm before generation
-    const confirmed = await confirmGeneration();
+    const confirmed = await confirmStep('Proceed with file generation?');
     if (!confirmed) {
         console.log(chalk.yellow('\n⚠️  Project generation cancelled'));
         process.exit(0);
     }
 
-    // Step 2: Generate files with budget tracking
+    // Step 3: Generate files with budget tracking
     console.log(chalk.cyan('\n📝 Generating project files...\n'));
-    let totalCost = 0;
+    let totalCost = planningDocs.cost; // Include planning cost
     let filesGenerated = 0;
-    const outputDir = config.outputDir || process.cwd();
 
     for (let i = 0; i < projectPlan.files.length; i++) {
         const file = projectPlan.files[i];
@@ -154,6 +200,136 @@ export async function createProjectCommand(
 }
 
 /**
+ * Extract project name from description
+ */
+function extractProjectName(description: string): string {
+    // Simple extraction: take first few words, sanitize
+    const words = description.toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .split(/\s+/)
+        .filter(w => w.length > 2)
+        .slice(0, 3);
+
+    return words.join('-') || 'mcp-project';
+}
+
+/**
+ * Generate planning documents before project scaffolding
+ */
+async function generatePlanningDocuments(
+    client: MCPClient,
+    config: ProjectConfig,
+    outputDir: string
+): Promise<{ success: boolean; files: string[]; cost: number }> {
+    const docs = [
+        {
+            filename: 'SKETCH.md',
+            prompt: `Create a project sketch document for: ${config.description}
+
+Generate a comprehensive SKETCH.md that includes:
+1. Project Overview - High-level description and goals
+2. Key Features - Main functionality and user stories
+3. Technology Stack - Languages, frameworks, libraries
+4. Architecture Diagram (ASCII/text) - System components
+5. UI/UX Considerations - Interface design notes
+6. Database Schema (if applicable) - Data models
+7. API Endpoints (if applicable) - REST/GraphQL endpoints
+
+Make it detailed but readable. Use Markdown formatting.`
+        },
+        {
+            filename: 'LOGIC_FLOW.md',
+            prompt: `Create a logic flow document for: ${config.description}
+
+Generate a comprehensive LOGIC_FLOW.md that includes:
+1. User Journey - Step-by-step user interactions
+2. Data Flow - How data moves through the system
+3. Process Flowcharts (ASCII/text) - Key algorithms
+4. State Management - Application state transitions
+5. Error Handling - Error scenarios and recovery
+6. Security Considerations - Auth, validation, etc.
+7. Performance Optimization - Caching, lazy loading, etc.
+
+Use Mermaid diagrams where helpful. Make it actionable.`
+        },
+        {
+            filename: 'ROADMAP.md',
+            prompt: `Create a development roadmap for: ${config.description}
+
+Generate a comprehensive ROADMAP.md that includes:
+1. Project Phases - MVP, v1.0, v2.0, etc.
+2. Sprint Planning - 2-week sprint breakdown
+3. Milestone Checklist - Deliverables per phase
+4. Technical Debt Items - Known issues to address
+5. Future Enhancements - Post-MVP features
+6. Dependencies & Risks - External dependencies, blockers
+7. Timeline Estimates - Realistic time estimates
+
+Make it practical and achievable. Include checkboxes for tracking.`
+        }
+    ];
+
+    let totalCost = 0;
+    const createdFiles: string[] = [];
+
+    for (const doc of docs) {
+        try {
+            console.log(chalk.blue(`  Generating ${doc.filename}...`));
+
+            const context = client.getCurrentContext();
+            const response = await client.send({
+                mode: 'chat',
+                message: doc.prompt,
+                ...context,
+            });
+
+            // Extract markdown content
+            let content = response.message;
+
+            // Write file
+            const filePath = path.join(outputDir, doc.filename);
+            fs.writeFileSync(filePath, content, 'utf-8');
+
+            createdFiles.push(doc.filename);
+            totalCost += response.cost || 0;
+
+            console.log(chalk.green(`  ✓ Created ${doc.filename}`));
+            console.log(chalk.dim(`    Cost: $${(response.cost || 0).toFixed(4)}`));
+        } catch (error) {
+            console.log(chalk.red(`  ❌ Failed to generate ${doc.filename}`));
+            console.log(chalk.dim(`    Error: ${error instanceof Error ? error.message : String(error)}`));
+            return { success: false, files: createdFiles, cost: totalCost };
+        }
+    }
+
+    return { success: true, files: createdFiles, cost: totalCost };
+}
+
+/**
+ * Confirm step before proceeding
+ */
+async function confirmStep(message: string): Promise<boolean> {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+
+    return new Promise((resolve) => {
+        rl.question(chalk.yellow(`\n▶  ${message} (y/n) [y]: `), (answer) => {
+            rl.close();
+            resolve(answer.trim().toLowerCase() !== 'n');
+        });
+    });
+}
+
+/**
+ * Confirm before generation
+ */
+async function confirmGeneration(): Promise<boolean> {
+    return confirmStep('Proceed with generation?');
+}
+
+/**
  * Get project configuration from user input or options
  */
 async function getProjectConfig(
@@ -175,11 +351,12 @@ async function getProjectConfig(
 
     let config: ProjectConfig = {
         description: '',
-        budget: 0,
-        maxLayer: 'L1',
+        budget: 0.000001, // Free tier by default
+        maxLayer: 'L0', // L0 (free) by default
         enableTests: true,
         debugMode: false,
-        outputDir: options.output as string | undefined
+        outputDir: options.output as string | undefined,
+        useClaudeCode: false, // Default to multi-layer
     };
 
     try {
@@ -193,6 +370,14 @@ async function getProjectConfig(
         if (!config.description) {
             console.log(chalk.red('\n❌ Project description is required'));
             process.exit(1);
+        }
+
+        // Ask about Claude Code mode (if not provided via flag)
+        if (options.useClaudeCode === undefined) {
+            const claudeStr = await question(chalk.yellow('Use Claude Code engine for this project? (y/N) [N]: '));
+            config.useClaudeCode = claudeStr.toLowerCase() === 'y';
+        } else {
+            config.useClaudeCode = options.useClaudeCode as boolean;
         }
 
         // Get budget (if not provided)
@@ -209,17 +394,17 @@ async function getProjectConfig(
 
         // Get max layer (if not provided)
         if (!options.maxLayer) {
-            const layerStr = await question(chalk.yellow('Maximum layer (L0/L1/L2/L3) [L1]: '));
-            const layer = layerStr.toUpperCase();
-            config.maxLayer = (['L0', 'L1', 'L2', 'L3'].includes(layer) ? layer : 'L1') as 'L0' | 'L1' | 'L2' | 'L3';
+            const layerStr = await question(chalk.yellow('Maximum layer (L0/L1/L2/L3) [L0]: '));
+            const layer = layerStr.toUpperCase() || 'L0';
+            config.maxLayer = (['L0', 'L1', 'L2', 'L3'].includes(layer) ? layer : 'L0') as 'L0' | 'L1' | 'L2' | 'L3';
         } else {
             const layer = options.maxLayer.toString().toUpperCase();
-            config.maxLayer = (['L0', 'L1', 'L2', 'L3'].includes(layer) ? layer : 'L1') as 'L0' | 'L1' | 'L2' | 'L3';
+            config.maxLayer = (['L0', 'L1', 'L2', 'L3'].includes(layer) ? layer : 'L0') as 'L0' | 'L1' | 'L2' | 'L3';
         }
 
         // Validate layer
         if (!['L0', 'L1', 'L2', 'L3'].includes(config.maxLayer)) {
-            config.maxLayer = 'L1';
+            config.maxLayer = 'L0';
         }
 
         // Get test preference (if not provided)
@@ -360,21 +545,4 @@ Respond with ONLY the file content, no explanations or markdown code blocks.`;
         console.log(chalk.red('Error generating file:'), error instanceof Error ? error.message : String(error));
         return null;
     }
-}
-
-/**
- * Confirm before generation
- */
-async function confirmGeneration(): Promise<boolean> {
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
-    });
-
-    return new Promise((resolve) => {
-        rl.question(chalk.yellow('\n▶  Proceed with generation? (y/n) [y]: '), (answer) => {
-            rl.close();
-            resolve(answer.trim().toLowerCase() !== 'n');
-        });
-    });
 }

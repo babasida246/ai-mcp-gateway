@@ -119,6 +119,33 @@ async function pickModelFromLayer(
 
     if (models.length === 0) {
         logger.warn(`No models found for layer ${layer}`);
+
+        // If layer is disabled or has no models, fallback to L0 (free tier)
+        if (layer !== 'L0') {
+            logger.info(`Falling back to L0 (free tier) as ${layer} is unavailable`);
+            const l0Models = await getModelsByLayerWithFallback('L0');
+
+            if (l0Models.length === 0) {
+                logger.error('No L0 models available, cannot proceed');
+                return undefined;
+            }
+
+            // Filter by capability from L0 models
+            const capableL0Models = l0Models.filter((m) => {
+                if (taskType === 'code') return m.capabilities.code;
+                if (taskType === 'reasoning') return m.capabilities.reasoning;
+                return m.capabilities.general;
+            });
+
+            if (capableL0Models.length === 0) {
+                return l0Models[0]; // Fallback to any L0 model
+            }
+
+            return capableL0Models.reduce((cheapest, current) =>
+                current.relativeCost < cheapest.relativeCost ? current : cheapest,
+            );
+        }
+
         return undefined;
     }
 

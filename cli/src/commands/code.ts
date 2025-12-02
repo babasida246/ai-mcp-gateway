@@ -5,10 +5,16 @@
 
 import chalk from 'chalk';
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
-import { MCPClient } from '../client.js';
+import { MCPClient, MCPResponse } from '../client.js';
 import { basename, extname, dirname, join, relative } from 'path';
 import { execSync } from 'child_process';
-import { displayEscalation } from '../utils/escalation.js';
+import { displayEscalation, promptEscalationConfirm } from '../utils/escalation.js';
+import {
+    shouldUseClaudeCode,
+    promptClaudeCodeInsteadOfEscalation,
+    executeWithClaudeCode,
+    createTaskSummary
+} from '../utils/claudeIntegration.js';
 
 interface CodeContext {
     relatedFiles: string[];
@@ -29,6 +35,7 @@ export async function codeCommand(
         related?: boolean; // Include related files
         create?: boolean; // Create new code
         output?: string; // Output file for generated code
+        useClaudeCode?: boolean; // NEW: Enable Claude Code mode
     }
 ): Promise<void> {
     const client = new MCPClient(options.endpoint, options.apiKey);
@@ -89,11 +96,60 @@ export async function codeCommand(
     let fullMessage = buildEnhancedPrompt(prompt, fileName, language, fileContent, codeContext, options.create);
 
     try {
-        const response = await client.send({
+        let response = await client.send({
             mode: 'code',
             message: fullMessage,
             ...context,
         });
+
+        // Handle escalation confirmation if required
+        if (response.requiresEscalationConfirm && response.suggestedLayer) {
+            const currentLayer = response.metadata?.layer || 'L0';
+
+            // Check if Claude Code mode is available/preferred
+            const { shouldUse, projectRoot } = await shouldUseClaudeCode(
+                process.cwd(),
+                options.useClaudeCode
+            );
+
+            if (shouldUse && projectRoot) {
+                // Offer Claude Code instead of escalation
+                const taskSummary = createTaskSummary('code', filePath, options.prompt);
+                const useClaudeCode = await promptClaudeCodeInsteadOfEscalation(
+                    taskSummary,
+                    currentLayer,
+                    response.suggestedLayer,
+                    response.escalationReason || 'Quality improvement needed'
+                );
+
+                if (useClaudeCode) {
+                    // Launch Claude Code and exit
+                    await executeWithClaudeCode(taskSummary, projectRoot);
+                    process.exit(0);
+                }
+                // If user declined Claude Code, continue with normal escalation below
+            }
+
+            // Normal escalation flow (when Claude Code not available or user declined)
+            const shouldEscalate = await promptEscalationConfirm(
+                currentLayer,
+                response.suggestedLayer,
+                response.escalationReason || 'Quality improvement needed'
+            );
+
+            if (shouldEscalate) {
+                console.log(chalk.cyan(`\n🔄 Escalating to ${response.suggestedLayer}...\n`));
+
+                // Use optimized prompt if available, otherwise use original
+                const escalatedMessage = response.optimizedPrompt || fullMessage;
+
+                response = await client.send({
+                    mode: 'code',
+                    message: escalatedMessage,
+                    ...context,
+                });
+            }
+        }
 
         printResponse(response, codeContext, options.create, options.output);
     } catch (error) {

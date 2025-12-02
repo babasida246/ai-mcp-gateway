@@ -1,6 +1,7 @@
 import { env } from './env.js';
 import { logger } from '../logging/logger.js';
 import { ModelProvider } from './models.js';
+import { providerManager } from './provider-manager.js';
 
 /**
  * Provider health status tracker
@@ -27,6 +28,9 @@ export class ProviderHealthManager {
         this.healthStatus.set(provider, isHealthy);
         this.lastCheckTime.set(provider, now);
 
+        // Update database
+        await providerManager.updateHealthStatus(provider, isHealthy);
+
         return isHealthy;
     }
 
@@ -36,20 +40,26 @@ export class ProviderHealthManager {
     private async checkProviderHealth(provider: ModelProvider): Promise<boolean> {
         try {
             switch (provider) {
-                case 'openai':
-                    if (!env.OPENAI_API_KEY) return false;
-                    // Could add actual API ping here
+                case 'openai': {
+                    // Check database first
+                    const apiKey = await providerManager.getApiKey('openai');
+                    if (!apiKey && !env.OPENAI_API_KEY) return false;
                     return true;
+                }
 
-                case 'anthropic':
-                    if (!env.ANTHROPIC_API_KEY) return false;
-                    // Could add actual API ping here
+                case 'anthropic': {
+                    // Check database first
+                    const apiKey = await providerManager.getApiKey('anthropic');
+                    if (!apiKey && !env.ANTHROPIC_API_KEY) return false;
                     return true;
+                }
 
-                case 'openrouter':
-                    if (!env.OPENROUTER_API_KEY) return false;
-                    // Could add actual API ping here
+                case 'openrouter': {
+                    // Check database first
+                    const apiKey = await providerManager.getApiKey('openrouter');
+                    if (!apiKey && !env.OPENROUTER_API_KEY) return false;
                     return true;
+                }
 
                 case 'oss-local':
                     if (!env.OSS_MODEL_ENABLED) return false;

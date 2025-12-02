@@ -64,11 +64,16 @@ class ModelConfigService {
                 return;
             }
 
+            logger.info('Loading model configurations from database...');
             await this.loadFromDatabase();
             this.initialized = true;
-            logger.info('Model configurations loaded from database');
+            logger.info(`Model configurations loaded from database: ${this.modelCache.size} models, ${this.layerCache.size} layers`);
         } catch (error) {
-            logger.error('Failed to load model configurations from database', { error });
+            logger.error('Failed to load model configurations from database', {
+                error,
+                message: error instanceof Error ? error.message : 'Unknown error',
+                stack: error instanceof Error ? error.stack : undefined
+            });
             logger.warn('Falling back to .env configuration');
             await this.loadFromEnv();
         }
@@ -134,7 +139,7 @@ class ModelConfigService {
     private async loadFromEnv(): Promise<void> {
         // Import the MODEL_CATALOG from models.ts as fallback
         const { MODEL_CATALOG } = await import('../config/models.js');
-        
+
         this.modelCache.clear();
         for (const model of MODEL_CATALOG) {
             if (model.enabled) {
@@ -189,7 +194,7 @@ class ModelConfigService {
      */
     async getModelsByLayer(layer: ModelLayer): Promise<ModelConfig[]> {
         await this.initialize();
-        
+
         const layerConfig = this.layerCache.get(layer);
         if (!layerConfig || !layerConfig.enabled) {
             return [];
@@ -280,6 +285,85 @@ class ModelConfigService {
             }
 
             logger.info(`Model ${modelId} ${enabled ? 'enabled' : 'disabled'}`);
+        } finally {
+            client.release();
+        }
+    }
+
+    /**
+     * Update model configuration
+     */
+    async updateModel(modelId: string, updates: Partial<ModelConfig>): Promise<void> {
+        if (!db.isReady()) {
+            logger.warn('Database not ready, cannot persist model updates');
+            // Update cache only
+            const model = this.modelCache.get(modelId);
+            if (model) {
+                Object.assign(model, updates);
+            }
+            return;
+        }
+
+        const client = await db.getClient();
+        try {
+            const updateFields: string[] = [];
+            const values: any[] = [];
+            let paramIndex = 1;
+
+            if (updates.apiModelName !== undefined) {
+                updateFields.push(`api_model_name = $${paramIndex++}`);
+                values.push(updates.apiModelName);
+            }
+            if (updates.provider !== undefined) {
+                updateFields.push(`provider = $${paramIndex++}`);
+                values.push(updates.provider);
+            }
+            if (updates.layer !== undefined) {
+                updateFields.push(`layer = $${paramIndex++}`);
+                values.push(updates.layer);
+            }
+            if (updates.relativeCost !== undefined) {
+                updateFields.push(`relative_cost = $${paramIndex++}`);
+                values.push(updates.relativeCost);
+            }
+            if (updates.pricePer1kInputTokens !== undefined) {
+                updateFields.push(`price_per_1k_input_tokens = $${paramIndex++}`);
+                values.push(updates.pricePer1kInputTokens);
+            }
+            if (updates.pricePer1kOutputTokens !== undefined) {
+                updateFields.push(`price_per_1k_output_tokens = $${paramIndex++}`);
+                values.push(updates.pricePer1kOutputTokens);
+            }
+            if (updates.contextWindow !== undefined) {
+                updateFields.push(`context_window = $${paramIndex++}`);
+                values.push(updates.contextWindow);
+            }
+            if (updates.enabled !== undefined) {
+                updateFields.push(`enabled = $${paramIndex++}`);
+                values.push(updates.enabled);
+            }
+            if (updates.capabilities !== undefined) {
+                updateFields.push(`capabilities = $${paramIndex++}`);
+                values.push(JSON.stringify(updates.capabilities));
+            }
+
+            if (updateFields.length === 0) {
+                return; // Nothing to update
+            }
+
+            updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+            values.push(modelId);
+
+            const query = `UPDATE model_configs SET ${updateFields.join(', ')} WHERE id = $${paramIndex}`;
+            await client.query(query, values);
+
+            // Update cache
+            const model = this.modelCache.get(modelId);
+            if (model) {
+                Object.assign(model, updates);
+            }
+
+            logger.info(`Model ${modelId} updated`);
         } finally {
             client.release();
         }

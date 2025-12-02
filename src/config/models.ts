@@ -81,7 +81,7 @@ export const MODEL_CATALOG: ModelConfig[] = [
     {
         id: 'openrouter-grok-free',
         provider: 'openrouter',
-        apiModelName: 'x-ai/grok-beta',
+        apiModelName: 'x-ai/grok-4.1-fast:free',
         layer: 'L0',
         relativeCost: 0,
         pricePer1kInputTokens: 0,

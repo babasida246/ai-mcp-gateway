@@ -22,6 +22,7 @@ import { codeCommand } from './commands/code.js';
 import { diffCommand } from './commands/diff.js';
 import { analyzeCommand } from './commands/analyze.js';
 import { createProjectCommand } from './commands/create-project.js';
+import { claudeCommand } from './commands/claude.js';
 
 const program = new Command();
 
@@ -40,12 +41,14 @@ program
     .command('chat [message]')
     .description('Chat with AI (interactive mode if no message provided)')
     .option('-i, --interactive', 'Force interactive mode')
+    .option('--use-claude-code', 'Use Claude Code instead of multi-layer API')
     .action(async (message: string | undefined, options: Record<string, unknown>) => {
         const globalOpts = program.opts();
         await chatCommand(message, {
             endpoint: globalOpts.endpoint as string | undefined,
             apiKey: globalOpts.apiKey as string | undefined,
             interactive: options.interactive as boolean | undefined,
+            useClaudeCode: options.useClaudeCode as boolean | undefined,
         });
     });
 
@@ -59,6 +62,7 @@ program
     .option('--no-related', 'Skip related files analysis')
     .option('-c, --create', 'Create new code instead of analyzing existing file')
     .option('-o, --output <file>', 'Output file for generated code')
+    .option('--use-claude-code', 'Use Claude Code instead of multi-layer API')
     .action(async (arg: string, options: Record<string, unknown>) => {
         const globalOpts = program.opts() as Record<string, unknown>;
         await codeCommand(arg, {
@@ -70,6 +74,7 @@ program
             related: options.related as boolean | undefined,
             create: options.create as boolean | undefined,
             output: options.output as string | undefined,
+            useClaudeCode: options.useClaudeCode as boolean | undefined,
         });
     });
 
@@ -79,6 +84,7 @@ program
     .description('Request unified diff patch from AI')
     .option('-p, --prompt <text>', 'Custom prompt for changes')
     .option('--apply', 'Automatically apply the patch (not implemented)')
+    .option('--use-claude-code', 'Use Claude Code instead of multi-layer API')
     .action(async (arg: string, options: Record<string, unknown>) => {
         const globalOpts = program.opts() as Record<string, unknown>;
         await diffCommand(arg, {
@@ -86,6 +92,7 @@ program
             endpoint: globalOpts.endpoint as string | undefined,
             apiKey: globalOpts.apiKey as string | undefined,
             apply: options.apply as boolean | undefined,
+            useClaudeCode: options.useClaudeCode as boolean | undefined,
         });
     });
 
@@ -96,6 +103,7 @@ program
     .option('-p, --prompt <text>', 'Custom analysis prompt')
     .option('-m, --max-files <number>', 'Maximum files to analyze (default: 10)', '10')
     .option('-r, --recursive', 'Include subdirectories')
+    .option('--use-claude-code', 'Use Claude Code instead of multi-layer API')
     .action(async (pattern: string, options: Record<string, unknown>) => {
         const globalOpts = program.opts() as Record<string, unknown>;
         await analyzeCommand(pattern, {
@@ -104,6 +112,7 @@ program
             apiKey: globalOpts.apiKey as string | undefined,
             maxFiles: parseInt(options.maxFiles as string),
             recursive: options.recursive as boolean | undefined,
+            useClaudeCode: options.useClaudeCode as boolean | undefined,
         });
     });
 
@@ -119,6 +128,7 @@ program
     .option('-l, --max-layer <layer>', 'Maximum layer to use (L0/L1/L2/L3)')
     .option('--enable-test', 'Enable testing during generation')
     .option('--enable-debug', 'Enable debug mode')
+    .option('--use-claude-code', 'Use Claude Code engine instead of multi-layer API')
     .action(async (description: string, options: Record<string, unknown>) => {
         const globalOpts = program.opts() as Record<string, unknown>;
         await createProjectCommand(description, {
@@ -129,6 +139,25 @@ program
             maxLayer: options.maxLayer as string | undefined,
             noTests: options.noTest as boolean | undefined,
             debug: options.enableDebug as boolean | undefined,
+            useClaudeCode: options.useClaudeCode as boolean | undefined,
+        });
+    });
+
+// Claude command - Launch Claude Code
+program
+    .command('claude')
+    .description('Launch Claude Code in current or specified directory')
+    .option('--cwd <dir>', 'Working directory for Claude Code')
+    .allowUnknownOption() // Allow forwarding args to claude
+    .action(async (options: Record<string, unknown>, cmd: Command) => {
+        // Extract args after 'claude' command to forward to Claude Code
+        const rawArgs = process.argv.slice(2); // All args after 'node script.js'
+        const claudeIndex = rawArgs.findIndex(arg => arg === 'claude');
+        const forwardArgs = claudeIndex >= 0 ? rawArgs.slice(claudeIndex + 1).filter(arg => !arg.startsWith('--cwd')) : [];
+
+        await claudeCommand({
+            cwd: options.cwd as string | undefined,
+            forwardArgs: forwardArgs.length > 0 ? forwardArgs : undefined,
         });
     });
 

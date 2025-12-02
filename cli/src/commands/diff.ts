@@ -4,9 +4,15 @@
 
 import chalk from 'chalk';
 import { readFileSync } from 'fs';
-import { MCPClient } from '../client.js';
+import { MCPClient, MCPResponse } from '../client.js';
 import { basename, extname } from 'path';
-import { displayEscalation } from '../utils/escalation.js';
+import { displayEscalation, promptEscalationConfirm } from '../utils/escalation.js';
+import {
+    shouldUseClaudeCode,
+    promptClaudeCodeInsteadOfEscalation,
+    executeWithClaudeCode,
+    createTaskSummary
+} from '../utils/claudeIntegration.js';
 
 export async function diffCommand(
     filePath: string,
@@ -15,6 +21,7 @@ export async function diffCommand(
         endpoint?: string;
         apiKey?: string;
         apply?: boolean;
+        useClaudeCode?: boolean;
     }
 ): Promise<void> {
     const client = new MCPClient(options.endpoint, options.apiKey);
@@ -50,11 +57,33 @@ export async function diffCommand(
     const fullMessage = `${prompt}\n\nFile: ${filePath}\nLanguage: ${language}\n\n\`\`\`${language}\n${fileContent}\n\`\`\``;
 
     try {
-        const response = await client.send({
+        let response = await client.send({
             mode: 'diff',
             message: fullMessage,
             ...context,
         });
+
+        // Handle escalation confirmation if required
+        if (response.requiresEscalationConfirm && response.suggestedLayer) {
+            const currentLayer = response.metadata?.layer || 'L0';
+            const shouldEscalate = await promptEscalationConfirm(
+                currentLayer,
+                response.suggestedLayer,
+                response.escalationReason || 'Quality improvement needed'
+            );
+
+            if (shouldEscalate) {
+                console.log(chalk.cyan(`\n🔄 Escalating to ${response.suggestedLayer}...\n`));
+
+                const escalatedMessage = response.optimizedPrompt || fullMessage;
+
+                response = await client.send({
+                    mode: 'diff',
+                    message: escalatedMessage,
+                    ...context,
+                });
+            }
+        }
 
         printResponse(response);
 

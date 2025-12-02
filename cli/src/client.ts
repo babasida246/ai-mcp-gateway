@@ -35,6 +35,8 @@ export interface MCPResponse {
         tokens: number;
         model: string;
         cost?: number;
+        layer?: string;
+        complexity?: string;
     };
     escalation?: {
         required: boolean;
@@ -44,6 +46,10 @@ export interface MCPResponse {
         message: string;
         optimizedPrompt?: string;
     };
+    requiresEscalationConfirm?: boolean;
+    suggestedLayer?: string;
+    escalationReason?: string;
+    optimizedPrompt?: string;
 }
 
 export class MCPClient {

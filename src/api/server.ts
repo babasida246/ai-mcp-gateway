@@ -73,6 +73,15 @@ export class APIServer {
      * Setup API routes
      */
     private async setupRoutes() {
+        // Database management routes
+        const { default: databaseRoutes } = await import('./database.js');
+        this.app.use('/v1/database', databaseRoutes);
+        this.app.use('/v1/redis', databaseRoutes);
+
+        // Provider management routes
+        const { default: providerRoutes } = await import('./providers.js');
+        this.app.use('/v1/providers', providerRoutes);
+
         // TODO: Import and mount admin routes when admin.ts is implemented
         // const { default: adminRoutes } = await import('./admin.js');
         // this.app.use('/admin', adminRoutes);
@@ -1728,7 +1737,7 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
     private async handleUpdateModel(req: Request, res: Response): Promise<void> {
         try {
             const { modelId } = req.params;
-            const { enabled } = req.body;
+            const updates = req.body;
 
             const model = await modelConfigService.getModelById(modelId);
 
@@ -1737,8 +1746,12 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
                 return;
             }
 
-            if (enabled !== undefined) {
-                await modelConfigService.setModelEnabled(modelId, enabled);
+            // If only enabled field is provided, use setModelEnabled for backward compatibility
+            if (Object.keys(updates).length === 1 && updates.enabled !== undefined) {
+                await modelConfigService.setModelEnabled(modelId, updates.enabled);
+            } else {
+                // Full model update
+                await modelConfigService.updateModel(modelId, updates);
             }
 
             const updatedModel = await modelConfigService.getModelById(modelId);
@@ -1749,7 +1762,13 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
                     id: updatedModel!.id,
                     provider: updatedModel!.provider,
                     apiModelName: updatedModel!.apiModelName,
+                    layer: updatedModel!.layer,
+                    relativeCost: updatedModel!.relativeCost,
+                    pricePer1kInputTokens: updatedModel!.pricePer1kInputTokens,
+                    pricePer1kOutputTokens: updatedModel!.pricePer1kOutputTokens,
+                    contextWindow: updatedModel!.contextWindow,
                     enabled: updatedModel!.enabled,
+                    capabilities: updatedModel!.capabilities,
                 },
             });
         } catch (error) {
@@ -2044,8 +2063,22 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
         // Check LLM provider connectivity using provider health manager
         await providerHealth.refreshAllProviders();
 
-        // Initialize database schema
-        await db.initSchema();
+        // Wait for database to be ready (with timeout)
+        const dbReadyTimeout = 10000; // 10 seconds
+        const startTime = Date.now();
+        while (!db.isReady() && Date.now() - startTime < dbReadyTimeout) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        if (db.isReady()) {
+            // Initialize database schema
+            await db.initSchema();
+
+            // Initialize model configurations from database
+            await modelConfigService.initialize();
+        } else {
+            logger.warn('Database not ready after timeout, skipping DB initialization');
+        }
 
         this.server = this.app.listen(port, host, () => {
             logger.info('API server started', {

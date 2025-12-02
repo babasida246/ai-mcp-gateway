@@ -14,6 +14,105 @@ A powerful command-line interface for the MCP Gateway with AI-powered project sc
 - 💰 **Budget Tracking** - Set per-project budgets and enforce cost limits
 - 🎯 **Layer Control** - Choose maximum model tier to control costs
 - ⚠️ **Escalation Alerts** - Manual confirmation for paid model usage
+- 🧠 **Claude Code Integration** - Seamlessly switch to Claude Code for complex tasks
+- 📐 **3-Phase Planning** - Automatic project planning documents (SKETCH, LOGIC_FLOW, ROADMAP)
+
+## 🧠 Claude Code Engine Mode
+
+MCP CLI can use Claude Code as an alternative to the multi-layer API pipeline. This is useful for:
+
+- **Cost Savings**: Use your Claude Pro subscription instead of pay-per-use API calls
+- **Full Context**: Claude Code has access to your entire project workspace
+- **Complex Tasks**: Let Claude Code handle complex refactoring and architecture changes
+
+### Setup Claude Code
+
+Install Claude Code CLI:
+
+**macOS:**
+```bash
+brew install anthropic/tap/claude
+```
+
+**Linux/WSL:**
+```bash
+npm install -g @anthropic-ai/claude-code
+# OR
+curl -fsSL https://claude.ai/install.sh | sh
+```
+
+**Windows:**
+```powershell
+npm install -g @anthropic-ai/claude-code
+```
+
+**Custom Binary Path:**
+```bash
+export CLAUDE_BIN=/path/to/claude
+```
+
+### Using Claude Code
+
+#### Quick Launch
+```bash
+# Launch Claude Code in current directory
+mcp claude
+
+# Launch in specific directory
+mcp claude --cwd ./my-project
+
+# Forward arguments to Claude Code
+mcp claude -- --help
+```
+
+#### Project-Based Mode
+
+When creating a project, enable Claude Code engine:
+
+```bash
+# Interactive prompt will ask: "Use Claude Code engine for this project? (y/N)"
+mcp create-project "Build a React dashboard"
+
+# Or use flag to skip prompt
+mcp create-project "Build a React dashboard" --use-claude-code
+```
+
+This creates `mcp.config.json` with:
+```json
+{
+  "projectName": "build-react-dashboard",
+  "engine": "claude-code",
+  "useClaudeCode": true,
+  ...
+}
+```
+
+#### Automatic Claude Code Fallback
+
+When inside a project with Claude Code enabled, all commands automatically offer Claude Code instead of escalating to paid tiers:
+
+```bash
+# Inside a Claude Code project
+mcp code src/app.tsx -p "Add authentication"
+
+# CLI detects escalation needed and prompts:
+# "🤖 Claude Code Available
+#  Use Claude Code for this task? (Y/n):"
+#
+# If Yes → Launches Claude Code with full context
+# If No → Escalates to L1/L2/L3 via API
+```
+
+#### Per-Command Override
+
+Force Claude Code for any command with `--use-claude-code`:
+
+```bash
+# Even outside a Claude Code project
+mcp code src/index.ts --use-claude-code -p "Refactor this module"
+mcp diff utils.py --use-claude-code -p "Optimize performance"
+mcp analyze "src/**/*.ts" --use-claude-code
+```
 
 ## 🚀 Installation
 

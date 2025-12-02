@@ -8,6 +8,8 @@ import Models from './pages/Models';
 import Settings from './pages/Settings';
 import Analytics from './pages/Analytics';
 import Alerts from './pages/Alerts';
+import Database from './pages/Database';
+import Redis from './pages/Redis';
 
 function App() {
   return (
@@ -21,6 +23,8 @@ function App() {
           <Route path="/logs" element={<Logs />} />
           <Route path="/providers" element={<Providers />} />
           <Route path="/models" element={<Models />} />
+          <Route path="/database" element={<Database />} />
+          <Route path="/redis" element={<Redis />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
