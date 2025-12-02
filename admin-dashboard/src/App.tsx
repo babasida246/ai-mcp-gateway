@@ -10,6 +10,7 @@ import Analytics from './pages/Analytics';
 import Alerts from './pages/Alerts';
 import Database from './pages/Database';
 import Redis from './pages/Redis';
+import OpenRouterInfo from './pages/OpenRouterInfo';
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
           <Route path="/models" element={<Models />} />
           <Route path="/database" element={<Database />} />
           <Route path="/redis" element={<Redis />} />
+          <Route path="/openrouter" element={<OpenRouterInfo />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

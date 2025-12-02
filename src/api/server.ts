@@ -10,6 +10,9 @@ import { providerHealth } from '../config/provider-health.js';
 import { SemanticSearch, KnowledgePackManager } from '../search/semantic.js';
 import { modelConfigService } from '../db/model-config.js';
 import type { TaskType } from '../mcp/types.js';
+import { createDatabaseRoutes } from './database.js';
+import { createProviderRoutes } from './providers.js';
+import { createOpenRouterRoutes } from './openrouter.js';
 
 /**
  * HTTP API Server for stateless request handling
@@ -73,14 +76,15 @@ export class APIServer {
      * Setup API routes
      */
     private async setupRoutes() {
-        // Database management routes
-        const { default: databaseRoutes } = await import('./database.js');
-        this.app.use('/v1/database', databaseRoutes);
-        this.app.use('/v1/redis', databaseRoutes);
+        // Database management routes (use factory function that works with bundled code)
+        this.app.use('/v1/database', createDatabaseRoutes());
+        this.app.use('/v1/redis', createDatabaseRoutes());
 
-        // Provider management routes
-        const { default: providerRoutes } = await import('./providers.js');
-        this.app.use('/v1/providers', providerRoutes);
+        // Provider management routes (use factory function that works with bundled code)
+        this.app.use('/v1/providers', createProviderRoutes());
+
+        // OpenRouter info routes (use factory function that works with bundled code)
+        this.app.use('/v1/openrouter', createOpenRouterRoutes());
 
         // TODO: Import and mount admin routes when admin.ts is implemented
         // const { default: adminRoutes } = await import('./admin.js');
@@ -2113,6 +2117,10 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
                     'POST /v1/providers',
                     'PUT /v1/providers/:providerId',
                     'DELETE /v1/providers/:providerId',
+                    'GET /v1/openrouter/models',
+                    'GET /v1/openrouter/limits',
+                    'GET /v1/openrouter/credits',
+                    'GET /v1/openrouter/activity',
                 ],
             });
         });

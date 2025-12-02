@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Key, Terminal, Users, Cpu, Settings as SettingsIcon, Menu, X, BarChart3, Bell, Database } from 'lucide-react';
+import { LayoutDashboard, Key, Terminal, Users, Cpu, Settings as SettingsIcon, Menu, X, BarChart3, Bell, Database, Zap } from 'lucide-react';
 
 interface LayoutProps {
   children: ReactNode;
@@ -16,6 +16,7 @@ const navigation = [
   { name: 'Models', href: '/models', icon: Cpu },
   { name: 'Database', href: '/database', icon: Database },
   { name: 'Redis', href: '/redis', icon: Database },
+  { name: 'OpenRouter Info', href: '/openrouter', icon: Zap },
   { name: 'Alerts', href: '/alerts', icon: Bell },
   { name: 'Settings', href: '/settings', icon: SettingsIcon },
 ];

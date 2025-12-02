@@ -286,10 +286,11 @@ class Database {
         if (!this._pool) return;
 
         try {
-            const { SettingsService } = await import('./settings-service.js');
-            const settingsService = new SettingsService(this);
-            await settingsService.initializeSettingsTables();
-            logger.info('Settings tables initialized successfully');
+            // TODO: Implement settings-service.ts
+            // const { SettingsService } = await import('./settings-service.js');
+            // const settingsService = new SettingsService(this);
+            // await settingsService.initializeSettingsTables();
+            logger.info('Settings tables initialization skipped (not implemented)');
         } catch (error) {
             logger.error('Failed to initialize settings tables', {
                 error: error instanceof Error ? error.message : 'Unknown',

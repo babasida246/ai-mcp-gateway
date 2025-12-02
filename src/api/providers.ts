@@ -7,182 +7,186 @@ import { Router, Request, Response } from 'express';
 import { providerManager, ProviderName } from '../config/provider-manager.js';
 import { logger } from '../logging/logger.js';
 
-const router = Router();
+export function createProviderRoutes(): Router {
+    const router = Router();
 
-/**
- * GET /v1/providers
- * Get all provider configurations
- */
-router.get('/', async (req: Request, res: Response) => {
-    try {
-        const providers = await providerManager.getAllProviders();
+    /**
+     * GET /v1/providers
+     * Get all provider configurations
+     */
+    router.get('/', async (req: Request, res: Response) => {
+        try {
+            const providers = await providerManager.getAllProviders();
 
-        // Mask API keys for security
-        const maskedProviders = providers.map(p => ({
-            ...p,
-            api_key: p.api_key ? `${p.api_key.substring(0, 8)}...${p.api_key.substring(p.api_key.length - 4)}` : null
-        }));
+            // Mask API keys for security
+            const maskedProviders = providers.map(p => ({
+                ...p,
+                api_key: p.api_key ? `${p.api_key.substring(0, 8)}...${p.api_key.substring(p.api_key.length - 4)}` : null
+            }));
 
-        res.json({
-            success: true,
-            providers: maskedProviders
-        });
-    } catch (error) {
-        logger.error('Failed to get providers', { error });
-        res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-        });
-    }
-});
-
-/**
- * GET /v1/providers/:providerName
- * Get specific provider configuration
- */
-router.get('/:providerName', async (req: Request, res: Response) => {
-    try {
-        const { providerName } = req.params;
-        const provider = await providerManager.getProvider(providerName as ProviderName);
-
-        if (!provider) {
-            return res.status(404).json({
+            res.json({
+                success: true,
+                providers: maskedProviders
+            });
+        } catch (error) {
+            logger.error('Failed to get providers', { error });
+            res.status(500).json({
                 success: false,
-                error: 'Provider not found'
+                error: error instanceof Error ? error.message : 'Unknown error'
             });
         }
+    });
 
-        // Mask API key
-        const maskedProvider = {
-            ...provider,
-            api_key: provider.api_key ? `${provider.api_key.substring(0, 8)}...${provider.api_key.substring(provider.api_key.length - 4)}` : null
-        };
+    /**
+     * GET /v1/providers/:providerName
+     * Get specific provider configuration
+     */
+    router.get('/:providerName', async (req: Request, res: Response) => {
+        try {
+            const { providerName } = req.params;
+            const provider = await providerManager.getProvider(providerName as ProviderName);
 
-        res.json({
-            success: true,
-            provider: maskedProvider
-        });
-    } catch (error) {
-        logger.error('Failed to get provider', { error });
-        res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-        });
-    }
-});
+            if (!provider) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Provider not found'
+                });
+            }
 
-/**
- * PUT /v1/providers/:providerName/api-key
- * Update provider API key
- */
-router.put('/:providerName/api-key', async (req: Request, res: Response) => {
-    try {
-        const { providerName } = req.params;
-        const { apiKey } = req.body;
+            // Mask API key
+            const maskedProvider = {
+                ...provider,
+                api_key: provider.api_key ? `${provider.api_key.substring(0, 8)}...${provider.api_key.substring(provider.api_key.length - 4)}` : null
+            };
 
-        if (!apiKey) {
-            return res.status(400).json({
+            res.json({
+                success: true,
+                provider: maskedProvider
+            });
+        } catch (error) {
+            logger.error('Failed to get provider', { error });
+            res.status(500).json({
                 success: false,
-                error: 'API key is required'
+                error: error instanceof Error ? error.message : 'Unknown error'
             });
         }
+    });
 
-        await providerManager.setProviderApiKey(
-            providerName as ProviderName,
-            apiKey,
-            'admin-api'
-        );
+    /**
+     * PUT /v1/providers/:providerName/api-key
+     * Update provider API key
+     */
+    router.put('/:providerName/api-key', async (req: Request, res: Response) => {
+        try {
+            const { providerName } = req.params;
+            const { apiKey } = req.body;
 
-        res.json({
-            success: true,
-            message: `API key updated for ${providerName}`
-        });
-    } catch (error) {
-        logger.error('Failed to update API key', { error });
-        res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-        });
-    }
-});
+            if (!apiKey) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'API key is required'
+                });
+            }
 
-/**
- * PATCH /v1/providers/:providerName
- * Update provider configuration
- */
-router.patch('/:providerName', async (req: Request, res: Response) => {
-    try {
-        const { providerName } = req.params;
-        const updates = req.body;
+            await providerManager.setProviderApiKey(
+                providerName as ProviderName,
+                apiKey,
+                'admin-api'
+            );
 
-        await providerManager.updateProviderConfig(
-            providerName as ProviderName,
-            updates
-        );
+            res.json({
+                success: true,
+                message: `API key updated for ${providerName}`
+            });
+        } catch (error) {
+            logger.error('Failed to update API key', { error });
+            res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    });
 
-        res.json({
-            success: true,
-            message: `Provider ${providerName} updated`
-        });
-    } catch (error) {
-        logger.error('Failed to update provider', { error });
-        res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-        });
-    }
-});
+    /**
+     * PATCH /v1/providers/:providerName
+     * Update provider configuration
+     */
+    router.patch('/:providerName', async (req: Request, res: Response) => {
+        try {
+            const { providerName } = req.params;
+            const updates = req.body;
 
-/**
- * POST /v1/providers/:providerName/enable
- * Enable a provider
- */
-router.post('/:providerName/enable', async (req: Request, res: Response) => {
-    try {
-        const { providerName } = req.params;
+            await providerManager.updateProviderConfig(
+                providerName as ProviderName,
+                updates
+            );
 
-        await providerManager.updateProviderConfig(
-            providerName as ProviderName,
-            { enabled: true }
-        );
+            res.json({
+                success: true,
+                message: `Provider ${providerName} updated`
+            });
+        } catch (error) {
+            logger.error('Failed to update provider', { error });
+            res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    });
 
-        res.json({
-            success: true,
-            message: `Provider ${providerName} enabled`
-        });
-    } catch (error) {
-        logger.error('Failed to enable provider', { error });
-        res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-        });
-    }
-});
+    /**
+     * POST /v1/providers/:providerName/enable
+     * Enable a provider
+     */
+    router.post('/:providerName/enable', async (req: Request, res: Response) => {
+        try {
+            const { providerName } = req.params;
 
-/**
- * POST /v1/providers/:providerName/disable
- * Disable a provider
- */
-router.post('/:providerName/disable', async (req: Request, res: Response) => {
-    try {
-        const { providerName } = req.params;
+            await providerManager.updateProviderConfig(
+                providerName as ProviderName,
+                { enabled: true }
+            );
 
-        await providerManager.updateProviderConfig(
-            providerName as ProviderName,
-            { enabled: false }
-        );
+            res.json({
+                success: true,
+                message: `Provider ${providerName} enabled`
+            });
+        } catch (error) {
+            logger.error('Failed to enable provider', { error });
+            res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    });
 
-        res.json({
-            success: true,
-            message: `Provider ${providerName} disabled`
-        });
-    } catch (error) {
-        logger.error('Failed to disable provider', { error });
-        res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-        });
-    }
-});
+    /**
+     * POST /v1/providers/:providerName/disable
+     * Disable a provider
+     */
+    router.post('/:providerName/disable', async (req: Request, res: Response) => {
+        try {
+            const { providerName } = req.params;
 
-export default router;
+            await providerManager.updateProviderConfig(
+                providerName as ProviderName,
+                { enabled: false }
+            );
+
+            res.json({
+                success: true,
+                message: `Provider ${providerName} disabled`
+            });
+        } catch (error) {
+            logger.error('Failed to disable provider', { error });
+            res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    });
+
+    return router;
+}
+
+export default createProviderRoutes();
