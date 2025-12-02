@@ -46,7 +46,7 @@ export async function createProjectCommand(
 
     console.log(chalk.yellow('\n📋 Project Configuration:'));
     console.log(chalk.dim(`  Description: ${config.description}`));
-    console.log(chalk.dim(`  Budget: ${config.budget === 0 ? 'Unlimited' : '$' + config.budget.toFixed(2)}`));
+    console.log(chalk.dim(`  Budget: ${config.budget === 0 ? 'Unlimited' : config.budget <= 0.000001 ? 'Free (L0 only)' : '$' + config.budget.toFixed(2)}`));
     console.log(chalk.dim(`  Max Layer: ${config.maxLayer}`));
     console.log(chalk.dim(`  Tests: ${config.enableTests ? 'Yes' : 'No'}`));
     console.log(chalk.dim(`  Debug: ${config.debugMode ? 'Yes' : 'No'}`));
@@ -197,8 +197,12 @@ async function getProjectConfig(
 
         // Get budget (if not provided)
         if (options.budget === undefined) {
-            const budgetStr = await question(chalk.yellow('Budget (USD, 0 for no limit): '));
-            config.budget = parseFloat(budgetStr) || 0;
+            const budgetStr = await question(chalk.yellow('Budget (USD, 0 for no limit) [0.000001]: '));
+            if (budgetStr.toLowerCase() === 'free' || budgetStr === '' || budgetStr === '0') {
+                config.budget = 0.000001; // Very small budget to force L0 only
+            } else {
+                config.budget = parseFloat(budgetStr) || 0.000001;
+            }
         } else {
             config.budget = options.budget as number;
         }

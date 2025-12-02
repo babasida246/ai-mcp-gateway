@@ -52,9 +52,9 @@ export class APIServer {
         this.app.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
             // Skip OPTIONS, health checks, and internal endpoints from metrics
             const skipPaths = ['/health', '/metrics', '/v1/models/layers', '/v1/providers'];
-            const shouldSkipMetrics = req.method === 'OPTIONS' || 
-                                     skipPaths.some(path => req.path.startsWith(path));
-            
+            const shouldSkipMetrics = req.method === 'OPTIONS' ||
+                skipPaths.some(path => req.path.startsWith(path));
+
             if (!shouldSkipMetrics) {
                 metrics.recordRequest();
             }
