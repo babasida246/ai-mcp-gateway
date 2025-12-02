@@ -33,7 +33,7 @@ export class APIServer {
         // CORS
         this.app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
             res.header('Access-Control-Allow-Origin', env.API_CORS_ORIGIN);
-            res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+            res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
             res.header(
                 'Access-Control-Allow-Headers',
                 'Content-Type, Authorization'
@@ -50,8 +50,12 @@ export class APIServer {
 
         // Request logging and metrics
         this.app.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
-            // Skip OPTIONS requests for metrics
-            if (req.method !== 'OPTIONS') {
+            // Skip OPTIONS, health checks, and internal endpoints from metrics
+            const skipPaths = ['/health', '/metrics', '/v1/models/layers', '/v1/providers'];
+            const shouldSkipMetrics = req.method === 'OPTIONS' || 
+                                     skipPaths.some(path => req.path.startsWith(path));
+            
+            if (!shouldSkipMetrics) {
                 metrics.recordRequest();
             }
 
@@ -1772,7 +1776,7 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
             }
 
             const { MODEL_CATALOG } = await import('../config/models.js');
-            
+
             // Check if model already exists
             if (MODEL_CATALOG.find(m => m.id === id)) {
                 res.status(409).json({ error: 'Model already exists' });
@@ -1813,7 +1817,7 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
         try {
             const { modelId } = req.params;
             const { MODEL_CATALOG } = await import('../config/models.js');
-            
+
             const index = MODEL_CATALOG.findIndex(m => m.id === modelId);
             if (index === -1) {
                 res.status(404).json({ error: 'Model not found' });
@@ -1841,13 +1845,24 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
             const { layerId } = req.params;
             const { enabled } = req.body;
 
-            // In real implementation, this would update the environment variable
-            // For now, we just return success
+            if (enabled === undefined) {
+                res.status(400).json({
+                    error: 'Missing required field: enabled',
+                });
+                return;
+            }
+
+            // Update runtime environment variable
+            const envKey = `LAYER_${layerId}_ENABLED`;
+            (env as any)[envKey] = enabled;
+
+            logger.info(`Layer ${layerId} ${enabled ? 'enabled' : 'disabled'}`);
+
             res.json({
                 success: true,
                 layer: layerId,
                 enabled,
-                message: 'Layer toggle requires restart to take effect',
+                message: `Layer ${layerId} ${enabled ? 'enabled' : 'disabled'} successfully`,
             });
         } catch (error) {
             logger.error('Failed to toggle layer', {
