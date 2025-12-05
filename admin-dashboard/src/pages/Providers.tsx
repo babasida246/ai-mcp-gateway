@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, XCircle, RefreshCw, AlertCircle, Power, PowerOff, Settings, Eye, EyeOff, Save, Plus, Trash2, X } from 'lucide-react';
-import axios from 'axios';
-
-const API_BASE = 'http://localhost:3000';
+import api from '../lib/api';
 
 interface ProviderStatus {
   openai: boolean;
@@ -63,7 +61,7 @@ export default function Providers() {
 
   async function loadProviders() {
     try {
-      const response = await axios.get(`${API_BASE}/v1/providers`);
+      const response = await api.get('/v1/providers');
       if (response.data?.success && Array.isArray(response.data.providers)) {
         setProviderConfigs(response.data.providers);
       }
@@ -78,7 +76,7 @@ export default function Providers() {
 
   async function loadHealth() {
     try {
-      const response = await axios.get(`${API_BASE}/health`);
+      const response = await api.get('/health');
       setHealth(response.data);
     } catch (err) {
       console.error('Failed to load health:', err);
@@ -91,7 +89,7 @@ export default function Providers() {
 
     try {
       const action = provider.enabled ? 'disable' : 'enable';
-      await axios.post(`${API_BASE}/v1/providers/${provider.provider_name}/${action}`);
+      await api.post(`/v1/providers/${provider.provider_name}/${action}`);
       
       setProviderConfigs(configs =>
         configs.map(p => p.id === id ? { ...p, enabled: !p.enabled } : p)
@@ -111,13 +109,13 @@ export default function Providers() {
     try {
       // Update API key if changed
       if (provider.api_key) {
-        await axios.put(`${API_BASE}/v1/providers/${provider.provider_name}/api-key`, {
+        await api.put(`/v1/providers/${provider.provider_name}/api-key`, {
           apiKey: provider.api_key
         });
       }
       
       // Update config if changed
-      await axios.patch(`${API_BASE}/v1/providers/${provider.provider_name}`, {
+      await api.patch(`/v1/providers/${provider.provider_name}`, {
         api_endpoint: provider.api_endpoint,
         config: provider.config,
       });
@@ -138,7 +136,7 @@ export default function Providers() {
     }
 
     try {
-      await axios.post(`${API_BASE}/v1/providers`, newProvider);
+      await api.post('/v1/providers', newProvider);
       
       setSaveStatus(`Custom provider ${newProvider.display_name || newProvider.provider_name} added successfully`);
       setShowAddForm(false);
@@ -167,7 +165,7 @@ export default function Providers() {
     if (!confirm(`Are you sure you want to delete provider "${provider.display_name}"?`)) return;
 
     try {
-      await axios.delete(`${API_BASE}/v1/providers/${provider.provider_name}`);
+      await api.delete(`/v1/providers/${provider.provider_name}`);
       
       setSaveStatus(`Provider ${provider.display_name} deleted successfully`);
       setTimeout(() => setSaveStatus(null), 3000);

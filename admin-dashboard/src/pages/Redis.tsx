@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Database, Key, RefreshCw, Search, Info } from 'lucide-react';
-import axios from 'axios';
-
-const API_BASE = 'http://localhost:3000';
+import api from '../lib/api';
 
 interface RedisInfo {
   version: string;
@@ -48,7 +46,7 @@ export default function Redis() {
   async function loadInfo() {
     try {
       setLoading(true);
-      const res = await axios.get(`${API_BASE}/v1/redis/info`);
+      const res = await api.get(`/v1/redis/info`);
       setInfo(res.data);
       setLoading(false);
     } catch (err) {
@@ -59,7 +57,7 @@ export default function Redis() {
 
   async function loadKeys(pattern: string) {
     try {
-      const res = await axios.get(`${API_BASE}/v1/redis/keys`, {
+      const res = await api.get(`/v1/redis/keys`, {
         params: { pattern, limit: 100 }
       });
       setKeys(res.data.keys || []);
@@ -70,7 +68,7 @@ export default function Redis() {
 
   async function loadKeyValue(key: string) {
     try {
-      const res = await axios.get(`${API_BASE}/v1/redis/key/${encodeURIComponent(key)}`);
+      const res = await api.get(`/v1/redis/key/${encodeURIComponent(key)}`);
       setKeyValue(res.data);
     } catch (err) {
       console.error('Failed to load key value:', err);
@@ -331,3 +329,4 @@ export default function Redis() {
     </div>
   );
 }
+

@@ -25,12 +25,9 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 import { Terminal as TerminalIcon, Plus, X, Play, Server, Globe, Monitor, Trash2, RefreshCw, Save, Bookmark, Star, Edit2, Zap, HelpCircle, Activity, Settings, Database, List, ChevronUp, ChevronDown } from 'lucide-react';
 import XTerminal, { type XTerminalRef } from '../components/XTerminal';
-
-/** API base URL - configured via environment variable or defaults to localhost */
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 /**
  * Quick CLI command buttons for the terminal toolbar.
@@ -196,7 +193,7 @@ export default function WebTerminal() {
   // Function declarations (before useEffect to avoid hoisting issues)
   async function loadSessions() {
     try {
-      const response = await axios.get(`${API_BASE}/v1/terminal/sessions`);
+      const response = await api.get(`/v1/terminal/sessions`);
       setSessions(response.data.sessions);
     } catch (err) {
       console.error('Failed to load sessions:', err);
@@ -205,7 +202,7 @@ export default function WebTerminal() {
 
   async function loadSavedConnections() {
     try {
-      const response = await axios.get(`${API_BASE}/v1/terminal/connections`);
+      const response = await api.get(`/v1/terminal/connections`);
       setSavedConnections(response.data.connections || []);
     } catch (err) {
       console.error('Failed to load saved connections:', err);
@@ -255,7 +252,7 @@ export default function WebTerminal() {
     pollIntervalRef.current = setInterval(async () => {
       try {
         // Don't clear immediately - let server accumulate data
-        const response = await axios.get(`${API_BASE}/v1/terminal/${activeSession}/output`);
+        const response = await api.get(`/v1/terminal/${activeSession}/output`);
         const output = response.data.output;
         if (output && output.length > 0) {
           const outputText = output.join('');
@@ -282,7 +279,7 @@ export default function WebTerminal() {
           // Clear buffer on server only after we've accumulated some data
           // and displayed it (avoid clearing during rapid typing)
           // if (outputText.length > 1000) {
-          //   await axios.get(`${API_BASE}/v1/terminal/${activeSession}/output?clear=true`);
+          //   await api.get(`/v1/terminal/${activeSession}/output?clear=true`);
           //   lastOutputLength = 0;
           // }
         }
@@ -330,9 +327,9 @@ export default function WebTerminal() {
       }
 
       if (editingConnection) {
-        await axios.put(`${API_BASE}/v1/terminal/connections/${editingConnection.id}`, connectionData);
+        await api.put(`/v1/terminal/connections/${editingConnection.id}`, connectionData);
       } else {
-        await axios.post(`${API_BASE}/v1/terminal/connections`, connectionData);
+        await api.post(`/v1/terminal/connections`, connectionData);
       }
 
       await loadSavedConnections();
@@ -350,7 +347,7 @@ export default function WebTerminal() {
       return;
     }
     try {
-      await axios.delete(`${API_BASE}/v1/terminal/connections/${connectionId}`);
+      await api.delete(`/v1/terminal/connections/${connectionId}`);
       await loadSavedConnections();
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Failed to delete connection'));
@@ -360,7 +357,7 @@ export default function WebTerminal() {
   async function connectWithSaved(connection: SavedConnection) {
     try {
       setError(null);
-      const response = await axios.post(`${API_BASE}/v1/terminal/connections/${connection.id}/connect`);
+      const response = await api.post(`/v1/terminal/connections/${connection.id}/connect`);
       const session = response.data.session;
       // Update ref immediately so setTerminalRef can find the session
       const newSessions = [...sessionsRef.current, session];
@@ -393,7 +390,7 @@ export default function WebTerminal() {
   async function createLocalSession() {
     try {
       setError(null);
-      const response = await axios.post(`${API_BASE}/v1/terminal/local`);
+      const response = await api.post(`/v1/terminal/local`);
       const session = response.data.session;
       // Update ref immediately so setTerminalRef can find the session
       const newSessions = [...sessionsRef.current, session];
@@ -418,7 +415,7 @@ export default function WebTerminal() {
         return;
       }
 
-      const response = await axios.post(`${API_BASE}/v1/terminal/ssh`, {
+      const response = await api.post(`/v1/terminal/ssh`, {
         host: sshHost,
         port: parseInt(sshPort) || 22,
         username: sshUsername,
@@ -453,7 +450,7 @@ export default function WebTerminal() {
         return;
       }
 
-      const response = await axios.post(`${API_BASE}/v1/terminal/telnet`, {
+      const response = await api.post(`/v1/terminal/telnet`, {
         host: telnetHost,
         port: parseInt(telnetPort) || 23,
       });
@@ -476,7 +473,7 @@ export default function WebTerminal() {
 
   async function closeSession(sessionId: string) {
     try {
-      await axios.delete(`${API_BASE}/v1/terminal/${sessionId}`);
+      await api.delete(`/v1/terminal/${sessionId}`);
       setSessions(prev => prev.filter(s => s.id !== sessionId));
       terminalRefs.current.delete(sessionId);
       localCommandBuffer.current.delete(sessionId);
@@ -556,7 +553,7 @@ export default function WebTerminal() {
           }
           
           try {
-            const response = await axios.post(`${API_BASE}/v1/terminal/${sessionId}/execute`, {
+            const response = await api.post(`/v1/terminal/${sessionId}/execute`, {
               command: command.trim(),
             });
             const output = response.data.result.stdout || response.data.result.stderr || '';
@@ -709,7 +706,7 @@ export default function WebTerminal() {
       // For SSH/Telnet - send data directly to server
       console.log('[Terminal SSH/Telnet] Sending data to server:', { sessionId, data: JSON.stringify(data) });
       try {
-        const response = await axios.post(`${API_BASE}/v1/terminal/${sessionId}/send`, {
+        const response = await api.post(`/v1/terminal/${sessionId}/send`, {
           data: data,
         });
         console.log('[Terminal SSH/Telnet] Send response:', response.data);
@@ -1271,3 +1268,4 @@ export default function WebTerminal() {
     </div>
   );
 }
+

@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 import { 
   MessageSquare, Send, Settings, Trash2, Copy, Check, Bot, User, Loader2, 
   Plus, ChevronLeft, ChevronRight, Edit2, Clock, X 
 } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const STORAGE_KEY = 'ai-mcp-chat-history';
 
 interface Message {
@@ -166,7 +165,7 @@ export default function Chat() {
 
   async function loadLayers() {
     try {
-      const response = await axios.get(`${API_BASE}/v1/models/layers`);
+      const response = await api.get('/v1/models/layers');
       setLayers(response.data.layers);
     } catch (err) {
       console.error('Failed to load layers:', err);
@@ -315,7 +314,7 @@ export default function Chat() {
       }
 
       // Use the chat completions endpoint
-      const response = await axios.post(`${API_BASE}/v1/chat/completions`, requestBody);
+      const response = await api.post('/v1/chat/completions', requestBody);
 
       const latency = Date.now() - startTime;
 

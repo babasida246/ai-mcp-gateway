@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Power, PowerOff, RefreshCw, Plus, Trash2, Edit2, Save, X, ArrowUp, ArrowDown } from 'lucide-react';
-import axios from 'axios';
+import api from '../lib/api';
 import ModelFormModal, { type ModelFormData } from '../components/ModelFormModal';
-
-const API_BASE = 'http://localhost:3000';
 
 interface Model {
   id: string;
@@ -53,7 +51,7 @@ export default function Models() {
 
   async function loadLayers() {
     try {
-      const response = await axios.get(`${API_BASE}/v1/models/layers`);
+      const response = await api.get(`/v1/models/layers`);
       if (response.data.layers) {
         setLayers(response.data.layers);
       }
@@ -69,7 +67,7 @@ export default function Models() {
   async function toggleLayer(layerName: string) {
     try {
       const newEnabled = !layers[layerName].enabled;
-      await axios.put(`${API_BASE}/v1/layers/${layerName}/toggle`, {
+      await api.put(`/v1/layers/${layerName}/toggle`, {
         enabled: newEnabled
       });
       
@@ -108,7 +106,7 @@ export default function Models() {
   async function removeModel(layerName: string, modelId: string, modelName: string) {
     if (confirm(`Remove model "${modelName}" from ${layerName}?`)) {
       try {
-        await axios.delete(`${API_BASE}/v1/models/${modelId}`);
+        await api.delete(`/v1/models/${modelId}`);
         setSaveStatus(`Model ${modelName} removed from ${layerName}`);
         setTimeout(() => setSaveStatus(null), 3000);
         loadLayers(); // Reload to get updated data
@@ -135,7 +133,7 @@ export default function Models() {
         return newLayers;
       });
       
-      await axios.put(`${API_BASE}/v1/models/${modelId}`, {
+      await api.put(`/v1/models/${modelId}`, {
         enabled: newEnabled
       });
       
@@ -174,13 +172,13 @@ export default function Models() {
   async function handleModalSave(data: ModelFormData, modelId?: string) {
     if (modalMode === 'edit' && modelId) {
       // Update existing model
-      await axios.put(`${API_BASE}/v1/models/${modelId}`, data);
+      await api.put(`/v1/models/${modelId}`, data);
       setSaveStatus(`Model ${modelId} updated`);
     } else {
       // Create new model - use addingToLayer if set, otherwise data.layer
       const targetLayer = addingToLayer || data.layer;
       const newModelId = `${data.provider}-${data.apiModelName.replace(/\//g, '-')}`;
-      await axios.post(`${API_BASE}/v1/models`, {
+      await api.post(`/v1/models`, {
         id: newModelId,
         ...data,
         layer: targetLayer,
@@ -233,7 +231,7 @@ export default function Models() {
     try {
       // Use the reorder API to update all priorities at once
       const modelIds = models.map(m => m.id);
-      await axios.put(`${API_BASE}/v1/layers/${layerName}/reorder`, { modelIds });
+      await api.put(`/v1/layers/${layerName}/reorder`, { modelIds });
       setSaveStatus(`Model order updated in ${layerName}`);
       setTimeout(() => setSaveStatus(null), 2000);
     } catch (err) {

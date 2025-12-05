@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Database as DatabaseIcon, Table, ChevronRight, RefreshCw, Search } from 'lucide-react';
-import axios from 'axios';
-
-const API_BASE = 'http://localhost:3000';
+import api from '../lib/api';
 
 interface TableInfo {
   table_name: string;
@@ -45,7 +43,7 @@ export default function Database() {
   async function loadTables() {
     try {
       setLoading(true);
-      const res = await axios.get(`${API_BASE}/v1/database/tables`);
+      const res = await api.get(`/v1/database/tables`);
       setTables(res.data.tables || []);
       setLoading(false);
     } catch (err) {
@@ -57,7 +55,7 @@ export default function Database() {
   async function loadTableData(tableName: string, page: number) {
     try {
       const offset = (page - 1) * rowsPerPage;
-      const res = await axios.get(`${API_BASE}/v1/database/table/${tableName}`, {
+      const res = await api.get(`/v1/database/table/${tableName}`, {
         params: { limit: rowsPerPage, offset }
       });
       setTableData(res.data);
@@ -276,3 +274,4 @@ export default function Database() {
     </div>
   );
 }
+

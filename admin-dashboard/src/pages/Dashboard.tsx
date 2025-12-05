@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Activity, DollarSign, Zap, TrendingUp } from 'lucide-react';
-import axios from 'axios';
-
-const API_BASE = 'http://localhost:3000';
+import api from '../lib/api';
 
 interface Stats {
   requests: { total: number; averageDuration: number };
@@ -35,8 +33,8 @@ export default function Dashboard() {
   async function loadData() {
     try {
       const [statsRes, healthRes] = await Promise.all([
-        axios.get(`${API_BASE}/v1/server-stats`),
-        axios.get(`${API_BASE}/health`),
+        api.get(`/v1/server-stats`),
+        api.get(`/health`),
       ]);
       setStats(statsRes.data);
       setHealth(healthRes.data);
@@ -165,3 +163,4 @@ export default function Dashboard() {
     </div>
   );
 }
+

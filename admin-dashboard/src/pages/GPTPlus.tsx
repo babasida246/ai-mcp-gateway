@@ -1,23 +1,19 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
-import { 
-  Key, 
-  LogIn, 
-  LogOut, 
-  Shield, 
-  Clock, 
-  CheckCircle, 
+import api from '../lib/api';
+import {
+  Key,
+  LogIn,
+  LogOut,
+  Shield,
+  Clock,
+  CheckCircle,
   XCircle,
   AlertTriangle,
   RefreshCw,
   Copy,
   ExternalLink,
   Zap
-} from 'lucide-react';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
-
-interface SessionInfo {
+} from 'lucide-react';interface SessionInfo {
   email: string;
   isPremium: boolean;
   expiresAt: string;
@@ -60,7 +56,7 @@ export default function GPTPlus() {
 
   async function loadStatus() {
     try {
-      const response = await axios.get(`${API_BASE}/v1/gpt-plus/status`);
+      const response = await api.get(`/v1/gpt-plus/status`);
       setStatus(response.data);
       setError(null);
     } catch (err) {
@@ -73,7 +69,7 @@ export default function GPTPlus() {
 
   async function loadModels() {
     try {
-      const response = await axios.get(`${API_BASE}/v1/gpt-plus/models`);
+      const response = await api.get(`/v1/gpt-plus/models`);
       setModels(response.data.models || []);
     } catch (err) {
       console.error('Failed to load GPT Plus models:', err);
@@ -88,7 +84,7 @@ export default function GPTPlus() {
     setError(null);
 
     try {
-      const response = await axios.post(`${API_BASE}/v1/gpt-plus/login`, {
+      const response = await api.post(`/v1/gpt-plus/login`, {
         accessToken: accessToken.trim(),
         email: email.trim(),
       });
@@ -111,7 +107,7 @@ export default function GPTPlus() {
     if (!confirm('Are you sure you want to logout from GPT Plus?')) return;
 
     try {
-      await axios.post(`${API_BASE}/v1/gpt-plus/logout`);
+      await api.post(`/v1/gpt-plus/logout`);
       setSuccess('Logged out successfully');
       loadStatus();
       setTimeout(() => setSuccess(null), 3000);
@@ -129,7 +125,7 @@ export default function GPTPlus() {
     setError(null);
 
     try {
-      const response = await axios.post(`${API_BASE}/v1/gpt-plus/chat`, {
+      const response = await api.post(`/v1/gpt-plus/chat`, {
         messages: [{ role: 'user', content: testMessage }],
         model: selectedModel,
       });
@@ -433,3 +429,4 @@ export default function GPTPlus() {
     </div>
   );
 }
+

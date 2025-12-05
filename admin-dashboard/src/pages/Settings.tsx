@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Save, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
-import axios from 'axios';
-
-const API_BASE = 'http://localhost:3000';
+import api from '../lib/api';
 
 interface Configuration {
   logLevel: string;
@@ -38,7 +36,7 @@ export default function Settings() {
 
   async function loadSettings() {
     try {
-      const response = await axios.get(`${API_BASE}/health`);
+      const response = await api.get(`/health`);
       if (response.data.configuration) {
         setConfig(response.data.configuration);
       }
@@ -289,3 +287,4 @@ export default function Settings() {
     </div>
   );
 }
+

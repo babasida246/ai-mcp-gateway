@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 import { 
   Zap, 
   DollarSign, 
@@ -17,8 +17,6 @@ import ModelFormModal, {
   mapOpenRouterToModelForm, 
   type ModelFormData 
 } from '../components/ModelFormModal';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 
 // Model interface matching OpenRouter API response
 interface Model {
@@ -189,7 +187,7 @@ export default function OpenRouterInfo() {
       return;
     }
 
-    const response = await axios.get(`${API_BASE}/v1/openrouter/models`);
+    const response = await api.get(`/v1/openrouter/models`);
     const data = response.data.models || [];
     
     // Cache the response
@@ -210,7 +208,7 @@ export default function OpenRouterInfo() {
       return;
     }
 
-    const response = await axios.get(`${API_BASE}/v1/openrouter/limits`);
+    const response = await api.get(`/v1/openrouter/limits`);
     const data = response.data.limits || null;
     
     // Cache the response
@@ -231,7 +229,7 @@ export default function OpenRouterInfo() {
       return;
     }
 
-    const response = await axios.get(`${API_BASE}/v1/openrouter/credits`);
+    const response = await api.get(`/v1/openrouter/credits`);
     const data = response.data.credits || null;
     
     // Cache the response
@@ -252,7 +250,7 @@ export default function OpenRouterInfo() {
       return;
     }
 
-    const response = await axios.get(`${API_BASE}/v1/openrouter/activity`);
+    const response = await api.get(`/v1/openrouter/activity`);
     const data = response.data.activity || [];
     
     // Cache the response
@@ -288,7 +286,7 @@ export default function OpenRouterInfo() {
   async function handleSaveModel(data: ModelFormData) {
     const modelId = `${data.provider}-${data.apiModelName.replace(/\//g, '-')}`;
     
-    await axios.post(`${API_BASE}/v1/models`, {
+    await api.post(`/v1/models`, {
       id: modelId,
       ...data,
       enabled: true,
@@ -609,3 +607,4 @@ export default function OpenRouterInfo() {
     </div>
   );
 }
+

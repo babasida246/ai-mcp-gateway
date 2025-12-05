@@ -122,7 +122,7 @@ export class OpenRouterClient implements LLMClient {
             // Handle response - check for both content and reasoning (for thinking models)
             const choice = data.choices[0]?.message;
             let content = choice?.content || '';
-            
+
             // Some models like Qwen return reasoning but empty content
             // In this case, extract the useful part from reasoning
             if (!content && choice?.reasoning) {
