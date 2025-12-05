@@ -220,10 +220,6 @@ class ModelConfigService {
             .filter(m => m.layer === layer) // Don't filter by enabled status
             .sort((a, b) => (a.priority || 0) - (b.priority || 0)); // Sort by priority ASC (0 = highest)
 
-        logger.info(`🔍 getAllModelsByLayer(${layer}) returning ${models.length} models:`, {
-            models: models.map(m => ({ id: m.id, enabled: m.enabled }))
-        });
-
         return models;
     }
 
@@ -404,6 +400,10 @@ class ModelConfigService {
                 updateFields.push(`capabilities = $${paramIndex++}`);
                 values.push(JSON.stringify(updates.capabilities));
             }
+            if (updates.priority !== undefined) {
+                updateFields.push(`priority = $${paramIndex++}`);
+                values.push(updates.priority);
+            }
 
             if (updateFields.length === 0) {
                 return; // Nothing to update
@@ -487,6 +487,51 @@ class ModelConfigService {
             this.modelCache.delete(modelId);
 
             logger.info(`Model ${modelId} deleted`);
+        } finally {
+            client.release();
+        }
+    }
+
+    /**
+     * Reorder models in a layer - update all priorities at once
+     */
+    async reorderModels(layer: ModelLayer, modelIds: string[]): Promise<void> {
+        if (!db.isReady()) {
+            logger.warn('Database not ready, cannot persist model reorder');
+            // Update cache only
+            modelIds.forEach((id, index) => {
+                const model = this.modelCache.get(id);
+                if (model && model.layer === layer) {
+                    model.priority = index;
+                }
+            });
+            return;
+        }
+
+        const client = await db.getClient();
+        try {
+            await client.query('BEGIN');
+
+            // Update each model's priority based on its position in the array
+            for (let i = 0; i < modelIds.length; i++) {
+                await client.query(
+                    'UPDATE model_configs SET priority = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND layer = $3',
+                    [i, modelIds[i], layer]
+                );
+
+                // Update cache
+                const model = this.modelCache.get(modelIds[i]);
+                if (model) {
+                    model.priority = i;
+                }
+            }
+
+            await client.query('COMMIT');
+            logger.info(`Reordered ${modelIds.length} models in layer ${layer}`);
+        } catch (error) {
+            await client.query('ROLLBACK');
+            logger.error(`Failed to reorder models in layer ${layer}`, { error });
+            throw error;
         } finally {
             client.release();
         }

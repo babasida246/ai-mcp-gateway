@@ -30,6 +30,7 @@ export interface RoutingContext {
     complexity: TaskComplexity;
     quality: QualityRequirement;
     preferredLayer?: ModelLayer;
+    preferredModel?: string; // Specific model ID to use (bypasses routing)
     enableCrossCheck?: boolean;
     enableAutoEscalate?: boolean;
     budget?: number; // Budget limit in USD (0 = free tier only)

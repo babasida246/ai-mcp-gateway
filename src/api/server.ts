@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { env } from '../config/env.js';
 import { logger } from '../logging/logger.js';
 import { metrics } from '../logging/metrics.js';
@@ -9,10 +9,15 @@ import { redisCache } from '../cache/redis.js';
 import { providerHealth } from '../config/provider-health.js';
 import { SemanticSearch, KnowledgePackManager } from '../search/semantic.js';
 import { modelConfigService } from '../db/model-config.js';
+import { gptPlusClient } from '../tools/llm/gpt-plus.js';
+import { terminalManager } from '../tools/terminal/index.js';
+import { TerminalConnectionService } from '../db/terminal-connections.js';
+import { authService } from '../db/auth.js';
 import type { TaskType } from '../mcp/types.js';
 import { createDatabaseRoutes } from './database.js';
 import { createProviderRoutes } from './providers.js';
 import { createOpenRouterRoutes } from './openrouter.js';
+import { createAgentRoutes } from './agents.js';
 
 /**
  * HTTP API Server for stateless request handling
@@ -72,10 +77,72 @@ export class APIServer {
         });
     }
 
+    private authServiceInitialized = false;
+
+    /**
+     * Ensure auth service is initialized with database pool
+     * This is called lazily to handle the case where database isn't ready at startup
+     */
+    private async ensureAuthServiceInit(): Promise<boolean> {
+        if (this.authServiceInitialized) {
+            return true;
+        }
+
+        if (db.isReady()) {
+            const pool = db.getPool();
+            if (pool) {
+                try {
+                    authService.init(pool);
+                    await authService.ensureTable();
+                    this.authServiceInitialized = true;
+                    logger.info('Auth service initialized successfully');
+                    return true;
+                } catch (error) {
+                    logger.error('Failed to initialize auth service', {
+                        error: error instanceof Error ? error.message : 'Unknown',
+                    });
+                }
+            }
+        }
+        return false;
+    }
+
     /**
      * Setup API routes
      */
     private async setupRoutes() {
+        // Try to initialize auth service with database pool (may fail if db not ready yet)
+        await this.ensureAuthServiceInit();
+
+        // ==================
+        // Auth Routes (Public - no middleware)
+        // ==================
+
+        // Login
+        this.app.post('/v1/auth/login', async (req, res) => {
+            await this.handleLogin(req, res);
+        });
+
+        // Check auth status
+        this.app.get('/v1/auth/status', (req, res) => {
+            res.json({
+                authEnabled: authService.isAuthEnabled(),
+                message: authService.isAuthEnabled()
+                    ? 'Authentication is enabled. Use /v1/auth/login to authenticate.'
+                    : 'Authentication is disabled. All routes are publicly accessible.',
+            });
+        });
+
+        // Verify token
+        this.app.post('/v1/auth/verify', async (req, res) => {
+            await this.handleVerifyToken(req, res);
+        });
+
+        // ==================
+        // Auth Middleware (applies to routes below if enabled)
+        // ==================
+        this.app.use('/v1', this.authMiddleware.bind(this));
+
         // Database management routes (use factory function that works with bundled code)
         this.app.use('/v1/database', createDatabaseRoutes());
         this.app.use('/v1/redis', createDatabaseRoutes());
@@ -85,6 +152,9 @@ export class APIServer {
 
         // OpenRouter info routes (use factory function that works with bundled code)
         this.app.use('/v1/openrouter', createOpenRouterRoutes());
+
+        // AI Agent routes
+        this.app.use('/v1/agents', createAgentRoutes());
 
         // TODO: Import and mount admin routes when admin.ts is implemented
         // const { default: adminRoutes } = await import('./admin.js');
@@ -163,6 +233,11 @@ export class APIServer {
         // Chat endpoint (general purpose)
         this.app.post('/v1/chat', async (req, res) => {
             await this.handleChat(req, res);
+        });
+
+        // OpenAI-compatible chat completions endpoint (for dashboard chat)
+        this.app.post('/v1/chat/completions', async (req, res) => {
+            await this.handleChatCompletions(req, res);
         });
 
         // Context endpoints
@@ -272,6 +347,11 @@ export class APIServer {
             await this.handleDeleteModel(req, res);
         });
 
+        // Reorder models in a layer
+        this.app.put('/v1/layers/:layerId/reorder', async (req, res) => {
+            await this.handleReorderModels(req, res);
+        });
+
         this.app.put('/v1/layers/:layerId/toggle', async (req, res) => {
             await this.handleToggleLayer(req, res);
         });
@@ -291,6 +371,85 @@ export class APIServer {
 
         this.app.delete('/v1/providers/:providerId', async (req, res) => {
             await this.handleDeleteProvider(req, res);
+        });
+
+        // GPT Plus endpoints
+        this.app.get('/v1/gpt-plus/status', async (req, res) => {
+            await this.handleGPTPlusStatus(req, res);
+        });
+
+        this.app.post('/v1/gpt-plus/login', async (req, res) => {
+            await this.handleGPTPlusLogin(req, res);
+        });
+
+        this.app.post('/v1/gpt-plus/logout', async (req, res) => {
+            await this.handleGPTPlusLogout(req, res);
+        });
+
+        this.app.get('/v1/gpt-plus/models', async (req, res) => {
+            await this.handleGPTPlusModels(req, res);
+        });
+
+        this.app.post('/v1/gpt-plus/chat', async (req, res) => {
+            await this.handleGPTPlusChat(req, res);
+        });
+
+        // Terminal/CLI endpoints
+        this.app.get('/v1/terminal/sessions', async (req, res) => {
+            await this.handleGetTerminalSessions(req, res);
+        });
+
+        this.app.post('/v1/terminal/local', async (req, res) => {
+            await this.handleCreateLocalSession(req, res);
+        });
+
+        this.app.post('/v1/terminal/ssh', async (req, res) => {
+            await this.handleCreateSSHSession(req, res);
+        });
+
+        this.app.post('/v1/terminal/telnet', async (req, res) => {
+            await this.handleCreateTelnetSession(req, res);
+        });
+
+        this.app.post('/v1/terminal/:sessionId/execute', async (req, res) => {
+            await this.handleExecuteCommand(req, res);
+        });
+
+        this.app.post('/v1/terminal/:sessionId/send', async (req, res) => {
+            await this.handleSendData(req, res);
+        });
+
+        this.app.get('/v1/terminal/:sessionId/output', async (req, res) => {
+            await this.handleGetSessionOutput(req, res);
+        });
+
+        this.app.delete('/v1/terminal/:sessionId', async (req, res) => {
+            await this.handleCloseSession(req, res);
+        });
+
+        // Terminal connection profiles (saved connections)
+        this.app.get('/v1/terminal/connections', async (req, res) => {
+            await this.handleGetTerminalConnections(req, res);
+        });
+
+        this.app.post('/v1/terminal/connections', async (req, res) => {
+            await this.handleCreateTerminalConnection(req, res);
+        });
+
+        this.app.get('/v1/terminal/connections/:connectionId', async (req, res) => {
+            await this.handleGetTerminalConnectionById(req, res);
+        });
+
+        this.app.put('/v1/terminal/connections/:connectionId', async (req, res) => {
+            await this.handleUpdateTerminalConnection(req, res);
+        });
+
+        this.app.delete('/v1/terminal/connections/:connectionId', async (req, res) => {
+            await this.handleDeleteTerminalConnection(req, res);
+        });
+
+        this.app.post('/v1/terminal/connections/:connectionId/connect', async (req, res) => {
+            await this.handleConnectFromProfile(req, res);
         });
 
         // 404 handler
@@ -697,6 +856,115 @@ export class APIServer {
                 error: 'Internal server error',
                 message:
                     error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle /v1/chat/completions - OpenAI-compatible chat completions
+     * Used by the dashboard chat interface
+     */
+    private async handleChatCompletions(req: Request, res: Response): Promise<void> {
+        const startTime = Date.now();
+        try {
+            const { messages, model, layer, temperature, max_tokens } = req.body;
+
+            if (!messages || !Array.isArray(messages) || messages.length === 0) {
+                res.status(400).json({
+                    error: 'Missing required field: messages (array)',
+                });
+                return;
+            }
+
+            // Build prompt from messages
+            const systemMessages = messages.filter((m: any) => m.role === 'system');
+            const userMessages = messages.filter((m: any) => m.role !== 'system');
+
+            const systemPrompt = systemMessages.length > 0
+                ? systemMessages.map((m: any) => m.content).join('\n')
+                : '';
+
+            const lastUserMessage = userMessages[userMessages.length - 1];
+            if (!lastUserMessage || lastUserMessage.role !== 'user') {
+                res.status(400).json({
+                    error: 'Last message must be from user',
+                });
+                return;
+            }
+
+            // Build conversation context
+            const conversationHistory = userMessages.slice(0, -1)
+                .map((m: any) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+                .join('\n');
+
+            const fullPrompt = [
+                systemPrompt ? `System: ${systemPrompt}` : '',
+                conversationHistory,
+                `User: ${lastUserMessage.content}`
+            ].filter(Boolean).join('\n\n');
+
+            // Determine routing options
+            const routingOptions: any = {
+                quality: 'normal',
+                complexity: 'medium',
+                taskType: 'general' as const,
+            };
+
+            // If specific layer requested
+            if (layer && ['L0', 'L1', 'L2', 'L3'].includes(layer)) {
+                routingOptions.preferredLayer = layer;
+            }
+
+            // If specific model requested
+            if (model && model !== 'auto') {
+                routingOptions.preferredModel = model;
+            }
+
+            // Route request
+            const result = await routeRequest(
+                {
+                    prompt: fullPrompt,
+                    maxTokens: max_tokens || 4096,
+                    temperature: temperature ?? 0.7,
+                },
+                routingOptions
+            );
+
+            const latency = Date.now() - startTime;
+
+            // Return OpenAI-compatible response
+            res.json({
+                id: `chatcmpl-${Date.now()}`,
+                object: 'chat.completion',
+                created: Math.floor(Date.now() / 1000),
+                model: result.modelId,
+                layer: result.layer,
+                content: result.content,
+                message: result.content,
+                usage: {
+                    prompt_tokens: result.inputTokens,
+                    completion_tokens: result.outputTokens,
+                    total_tokens: result.inputTokens + result.outputTokens,
+                },
+                cost: result.cost,
+                latency,
+                choices: [{
+                    index: 0,
+                    message: {
+                        role: 'assistant',
+                        content: result.content,
+                    },
+                    finish_reason: 'stop',
+                }],
+            });
+        } catch (error) {
+            logger.error('Chat completions error', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+
+            res.status(500).json({
+                error: 'Chat completion failed',
+                message: error instanceof Error ? error.message : 'Unknown error',
             });
         }
     }
@@ -1719,6 +1987,7 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
                         provider: m.provider,
                         apiModelName: m.apiModelName,
                         enabled: m.enabled,
+                        priority: m.priority ?? 0,
                     })),
                     providers,
                 };
@@ -1773,6 +2042,7 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
                     pricePer1kOutputTokens: updatedModel!.pricePer1kOutputTokens,
                     contextWindow: updatedModel!.contextWindow,
                     enabled: updatedModel!.enabled,
+                    priority: updatedModel!.priority,
                     capabilities: updatedModel!.capabilities,
                 },
             });
@@ -1856,6 +2126,51 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
             });
             res.status(500).json({
                 error: 'Failed to delete model',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle PUT /v1/layers/:layerId/reorder - Reorder models in a layer
+     */
+    private async handleReorderModels(req: Request, res: Response): Promise<void> {
+        try {
+            const { layerId } = req.params;
+            const { modelIds } = req.body;
+
+            // Validate layer ID
+            if (!['L0', 'L1', 'L2', 'L3'].includes(layerId)) {
+                res.status(400).json({
+                    error: 'Invalid layer ID. Must be L0, L1, L2, or L3',
+                });
+                return;
+            }
+
+            if (!Array.isArray(modelIds) || modelIds.length === 0) {
+                res.status(400).json({
+                    error: 'modelIds must be a non-empty array of model IDs',
+                });
+                return;
+            }
+
+            // Reorder models via modelConfigService
+            await modelConfigService.reorderModels(layerId as 'L0' | 'L1' | 'L2' | 'L3', modelIds);
+
+            logger.info(`Reordered ${modelIds.length} models in layer ${layerId}`);
+
+            res.json({
+                success: true,
+                layer: layerId,
+                modelIds,
+                message: `Models in ${layerId} reordered successfully`,
+            });
+        } catch (error) {
+            logger.error('Failed to reorder models', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to reorder models',
                 details: error instanceof Error ? error.message : 'Unknown error',
             });
         }
@@ -2056,6 +2371,836 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
     }
 
     /**
+     * Handle GET /v1/gpt-plus/status - Get GPT Plus session status
+     */
+    private async handleGPTPlusStatus(_req: Request, res: Response): Promise<void> {
+        try {
+            const isAvailable = gptPlusClient.isAvailable();
+            const sessionInfo = gptPlusClient.getSessionInfo();
+
+            res.json({
+                available: isAvailable,
+                session: sessionInfo ? {
+                    email: sessionInfo.email,
+                    isPremium: sessionInfo.isPremium,
+                    expiresAt: sessionInfo.expiresAt,
+                    expiresIn: Math.max(0, Math.floor((sessionInfo.expiresAt.getTime() - Date.now()) / 1000 / 60)), // minutes
+                } : null,
+            });
+        } catch (error) {
+            logger.error('Failed to get GPT Plus status', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to get GPT Plus status',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle POST /v1/gpt-plus/login - Login with GPT Plus access token
+     */
+    private async handleGPTPlusLogin(req: Request, res: Response): Promise<void> {
+        try {
+            const { accessToken, email } = req.body;
+
+            if (!accessToken || !email) {
+                res.status(400).json({
+                    error: 'Missing required fields: accessToken, email',
+                });
+                return;
+            }
+
+            const result = await gptPlusClient.loginWithAccessToken(accessToken, email);
+
+            if (result.success) {
+                const sessionInfo = gptPlusClient.getSessionInfo();
+                res.json({
+                    success: true,
+                    session: sessionInfo,
+                    message: 'GPT Plus login successful',
+                });
+            } else {
+                res.status(401).json({
+                    success: false,
+                    error: result.error || 'Login failed',
+                });
+            }
+        } catch (error) {
+            logger.error('GPT Plus login failed', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'GPT Plus login failed',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle POST /v1/gpt-plus/logout - Logout from GPT Plus
+     */
+    private async handleGPTPlusLogout(_req: Request, res: Response): Promise<void> {
+        try {
+            await gptPlusClient.logout();
+            res.json({
+                success: true,
+                message: 'GPT Plus logged out successfully',
+            });
+        } catch (error) {
+            logger.error('GPT Plus logout failed', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'GPT Plus logout failed',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle GET /v1/gpt-plus/models - Get available GPT Plus models
+     */
+    private async handleGPTPlusModels(_req: Request, res: Response): Promise<void> {
+        try {
+            const models = gptPlusClient.getAvailableModels();
+            res.json({
+                available: gptPlusClient.isAvailable(),
+                models,
+            });
+        } catch (error) {
+            logger.error('Failed to get GPT Plus models', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to get GPT Plus models',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle POST /v1/gpt-plus/chat - Chat with GPT Plus
+     */
+    private async handleGPTPlusChat(req: Request, res: Response): Promise<void> {
+        try {
+            if (!gptPlusClient.isAvailable()) {
+                res.status(401).json({
+                    error: 'GPT Plus session not available. Please login first.',
+                });
+                return;
+            }
+
+            const { messages, model, conversationId, parentMessageId } = req.body;
+
+            if (!messages || !Array.isArray(messages) || messages.length === 0) {
+                res.status(400).json({
+                    error: 'Missing required field: messages (array)',
+                });
+                return;
+            }
+
+            const result = await gptPlusClient.chat(messages, {
+                model,
+                conversationId,
+                parentMessageId,
+            });
+
+            res.json({
+                success: true,
+                response: result.content,
+                conversationId: result.conversationId,
+                messageId: result.messageId,
+            });
+        } catch (error) {
+            logger.error('GPT Plus chat failed', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'GPT Plus chat failed',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle GET /v1/terminal/sessions - Get all terminal sessions
+     */
+    private async handleGetTerminalSessions(_req: Request, res: Response): Promise<void> {
+        try {
+            const sessions = terminalManager.getAllSessions();
+            res.json({ sessions });
+        } catch (error) {
+            logger.error('Failed to get terminal sessions', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to get terminal sessions',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle POST /v1/terminal/local - Create local shell session
+     */
+    private async handleCreateLocalSession(_req: Request, res: Response): Promise<void> {
+        try {
+            const session = await terminalManager.createLocalSession();
+            res.json({ success: true, session });
+        } catch (error) {
+            logger.error('Failed to create local session', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to create local session',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle POST /v1/terminal/ssh - Create SSH session
+     */
+    private async handleCreateSSHSession(req: Request, res: Response): Promise<void> {
+        try {
+            const { host, port, username, password, privateKey, passphrase } = req.body;
+
+            if (!host || !username) {
+                res.status(400).json({
+                    error: 'Missing required fields: host, username',
+                });
+                return;
+            }
+
+            if (!password && !privateKey) {
+                res.status(400).json({
+                    error: 'Either password or privateKey is required',
+                });
+                return;
+            }
+
+            const session = await terminalManager.createSSHSession({
+                host,
+                port: port || 22,
+                username,
+                password,
+                privateKey,
+                passphrase,
+            });
+
+            res.json({ success: true, session });
+        } catch (error) {
+            logger.error('Failed to create SSH session', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to create SSH session',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle POST /v1/terminal/telnet - Create Telnet session
+     */
+    private async handleCreateTelnetSession(req: Request, res: Response): Promise<void> {
+        try {
+            const { host, port } = req.body;
+
+            if (!host) {
+                res.status(400).json({
+                    error: 'Missing required field: host',
+                });
+                return;
+            }
+
+            const session = await terminalManager.createTelnetSession({
+                host,
+                port: port || 23,
+            });
+
+            res.json({ success: true, session });
+        } catch (error) {
+            logger.error('Failed to create Telnet session', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to create Telnet session',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle POST /v1/terminal/:sessionId/execute - Execute command in session
+     */
+    private async handleExecuteCommand(req: Request, res: Response): Promise<void> {
+        try {
+            const { sessionId } = req.params;
+            const { command } = req.body;
+
+            if (!command) {
+                res.status(400).json({
+                    error: 'Missing required field: command',
+                });
+                return;
+            }
+
+            const session = terminalManager.getSession(sessionId);
+            if (!session) {
+                res.status(404).json({
+                    error: 'Session not found',
+                });
+                return;
+            }
+
+            let result;
+            if (session.type === 'local') {
+                result = await terminalManager.executeLocalCommand(sessionId, command);
+            } else if (session.type === 'ssh') {
+                result = await terminalManager.executeSSHCommand(sessionId, command);
+            } else {
+                res.status(400).json({
+                    error: 'Telnet sessions use send endpoint instead of execute',
+                });
+                return;
+            }
+
+            res.json({ success: true, result });
+        } catch (error) {
+            logger.error('Failed to execute command', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to execute command',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle POST /v1/terminal/:sessionId/send - Send data to Telnet session
+     */
+    private async handleSendData(req: Request, res: Response): Promise<void> {
+        try {
+            const { sessionId } = req.params;
+            const { data } = req.body;
+
+            logger.info('Terminal send data request', { sessionId, data: JSON.stringify(data) });
+
+            if (!data) {
+                res.status(400).json({
+                    error: 'Missing required field: data',
+                });
+                return;
+            }
+
+            const session = terminalManager.getSession(sessionId);
+            if (!session) {
+                logger.warn('Terminal session not found', { sessionId });
+                res.status(404).json({
+                    error: 'Session not found',
+                });
+                return;
+            }
+
+            // Support both Telnet and SSH interactive sessions
+            if (session.type === 'telnet') {
+                logger.info('Sending to Telnet session', { sessionId, data: JSON.stringify(data) });
+                await terminalManager.sendTelnetData(sessionId, data);
+            } else if (session.type === 'ssh') {
+                logger.info('Sending to SSH session', { sessionId, data: JSON.stringify(data) });
+                await terminalManager.sendToSSH(sessionId, data);
+            } else {
+                res.status(400).json({
+                    error: 'Send is only for Telnet/SSH sessions. Use execute for local.',
+                });
+                return;
+            }
+
+            res.json({ success: true });
+        } catch (error) {
+            logger.error('Failed to send data', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to send data',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle GET /v1/terminal/:sessionId/output - Get session output buffer
+     */
+    private async handleGetSessionOutput(req: Request, res: Response): Promise<void> {
+        try {
+            const { sessionId } = req.params;
+            const { clear } = req.query;
+
+            const session = terminalManager.getSession(sessionId);
+            if (!session) {
+                res.status(404).json({
+                    error: 'Session not found',
+                });
+                return;
+            }
+
+            const output = terminalManager.getSessionOutput(sessionId);
+
+            // Debug: Log when there's output to return
+            if (output.length > 0) {
+                logger.info(`[API] Returning output for ${sessionId}:`, {
+                    chunks: output.length,
+                    totalLength: output.join('').length,
+                    preview: output.join('').substring(0, 200),
+                    clear: clear === 'true'
+                });
+            }
+
+            if (clear === 'true') {
+                terminalManager.clearSessionOutput(sessionId);
+            }
+
+            res.json({ success: true, output, session });
+        } catch (error) {
+            logger.error('Failed to get session output', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to get session output',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle DELETE /v1/terminal/:sessionId - Close session
+     */
+    private async handleCloseSession(req: Request, res: Response): Promise<void> {
+        try {
+            const { sessionId } = req.params;
+
+            const session = terminalManager.getSession(sessionId);
+            if (!session) {
+                res.status(404).json({
+                    error: 'Session not found',
+                });
+                return;
+            }
+
+            await terminalManager.closeSession(sessionId);
+            res.json({ success: true, message: 'Session closed' });
+        } catch (error) {
+            logger.error('Failed to close session', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to close session',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    // =====================================
+    // Terminal Connection Profiles Handlers
+    // =====================================
+
+    private terminalConnectionService: TerminalConnectionService | null = null;
+
+    private async getTerminalConnectionService(): Promise<TerminalConnectionService> {
+        if (!this.terminalConnectionService) {
+            if (!db.isReady()) {
+                throw new Error('Database not ready');
+            }
+            this.terminalConnectionService = new TerminalConnectionService(db.getPool());
+            await this.terminalConnectionService.initialize();
+        }
+        return this.terminalConnectionService;
+    }
+
+    /**
+     * Handle GET /v1/terminal/connections - List all saved connections
+     */
+    private async handleGetTerminalConnections(req: Request, res: Response): Promise<void> {
+        try {
+            const service = await this.getTerminalConnectionService();
+            const connections = await service.getAll();
+            res.json({ success: true, connections });
+        } catch (error) {
+            logger.error('Failed to get terminal connections', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to get terminal connections',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle POST /v1/terminal/connections - Create a new connection profile
+     */
+    private async handleCreateTerminalConnection(req: Request, res: Response): Promise<void> {
+        try {
+            const { name, type, host, port, username, authType, password, privateKey, isDefault, notes, metadata } = req.body;
+
+            if (!name || !type) {
+                res.status(400).json({
+                    error: 'Missing required fields: name, type',
+                });
+                return;
+            }
+
+            if (type !== 'local' && !host) {
+                res.status(400).json({
+                    error: 'Host is required for SSH/Telnet connections',
+                });
+                return;
+            }
+
+            const service = await this.getTerminalConnectionService();
+            const connection = await service.create({
+                name,
+                type,
+                host,
+                port,
+                username,
+                authType,
+                password,
+                privateKey,
+                isDefault,
+                notes,
+                metadata,
+            });
+
+            res.json({ success: true, connection });
+        } catch (error) {
+            logger.error('Failed to create terminal connection', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to create terminal connection',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle GET /v1/terminal/connections/:connectionId - Get connection by ID
+     */
+    private async handleGetTerminalConnectionById(req: Request, res: Response): Promise<void> {
+        try {
+            const { connectionId } = req.params;
+            const service = await this.getTerminalConnectionService();
+            const connection = await service.getById(connectionId);
+
+            if (!connection) {
+                res.status(404).json({
+                    error: 'Connection not found',
+                });
+                return;
+            }
+
+            res.json({ success: true, connection });
+        } catch (error) {
+            logger.error('Failed to get terminal connection', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to get terminal connection',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle PUT /v1/terminal/connections/:connectionId - Update connection
+     */
+    private async handleUpdateTerminalConnection(req: Request, res: Response): Promise<void> {
+        try {
+            const { connectionId } = req.params;
+            const { name, host, port, username, authType, password, privateKey, isDefault, notes, metadata } = req.body;
+
+            const service = await this.getTerminalConnectionService();
+            const connection = await service.update(connectionId, {
+                name,
+                host,
+                port,
+                username,
+                authType,
+                password,
+                privateKey,
+                isDefault,
+                notes,
+                metadata,
+            });
+
+            if (!connection) {
+                res.status(404).json({
+                    error: 'Connection not found',
+                });
+                return;
+            }
+
+            res.json({ success: true, connection });
+        } catch (error) {
+            logger.error('Failed to update terminal connection', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to update terminal connection',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle DELETE /v1/terminal/connections/:connectionId - Delete connection
+     */
+    private async handleDeleteTerminalConnection(req: Request, res: Response): Promise<void> {
+        try {
+            const { connectionId } = req.params;
+            const service = await this.getTerminalConnectionService();
+            const deleted = await service.delete(connectionId);
+
+            if (!deleted) {
+                res.status(404).json({
+                    error: 'Connection not found',
+                });
+                return;
+            }
+
+            res.json({ success: true, message: 'Connection deleted' });
+        } catch (error) {
+            logger.error('Failed to delete terminal connection', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to delete terminal connection',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle POST /v1/terminal/connections/:connectionId/connect - Create session from profile
+     */
+    private async handleConnectFromProfile(req: Request, res: Response): Promise<void> {
+        try {
+            const { connectionId } = req.params;
+            const service = await this.getTerminalConnectionService();
+
+            const connection = await service.getById(connectionId);
+            if (!connection) {
+                res.status(404).json({
+                    error: 'Connection not found',
+                });
+                return;
+            }
+
+            // Get credentials
+            const credentials = await service.getCredentials(connectionId);
+
+            if (connection.type === 'local') {
+                const session = await terminalManager.createLocalSession();
+                res.json({ success: true, session, connectionId });
+            } else if (connection.type === 'ssh') {
+                if (!connection.host || !connection.username) {
+                    res.status(400).json({
+                        error: 'SSH connection requires host and username',
+                    });
+                    return;
+                }
+
+                const session = await terminalManager.createSSHSession({
+                    host: connection.host,
+                    port: connection.port || 22,
+                    username: connection.username,
+                    password: credentials?.password,
+                    privateKey: credentials?.privateKey,
+                });
+                res.json({ success: true, session, connectionId });
+            } else if (connection.type === 'telnet') {
+                if (!connection.host) {
+                    res.status(400).json({
+                        error: 'Telnet connection requires host',
+                    });
+                    return;
+                }
+
+                const session = await terminalManager.createTelnetSession({
+                    host: connection.host,
+                    port: connection.port || 23,
+                });
+                res.json({ success: true, session, connectionId });
+            } else {
+                res.status(400).json({
+                    error: 'Invalid connection type',
+                });
+            }
+        } catch (error) {
+            logger.error('Failed to connect from profile', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Failed to connect from profile',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    // ==================
+    // Auth Handler Methods
+    // ==================
+
+    /**
+     * Auth middleware - validates JWT token when auth is enabled
+     */
+    private async authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
+        // Skip auth if disabled
+        if (!authService.isAuthEnabled()) {
+            next();
+            return;
+        }
+
+        // Skip auth for certain public endpoints
+        const publicPaths = ['/v1/health', '/v1/auth/'];
+        if (publicPaths.some(path => req.path.startsWith(path))) {
+            next();
+            return;
+        }
+
+        // Get token from header
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            res.status(401).json({
+                error: 'Authentication required',
+                message: 'Please provide a valid Bearer token in the Authorization header',
+            });
+            return;
+        }
+
+        const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+        const payload = authService.verifyToken(token);
+
+        if (!payload) {
+            res.status(401).json({
+                error: 'Invalid or expired token',
+                message: 'Please login again to get a new token',
+            });
+            return;
+        }
+
+        // Attach user info to request for later use
+        (req as any).user = payload;
+        next();
+    }
+
+    /**
+     * Handle login request
+     */
+    private async handleLogin(req: Request, res: Response): Promise<void> {
+        try {
+            // Ensure auth service is initialized (lazy init if db wasn't ready at startup)
+            const authReady = await this.ensureAuthServiceInit();
+            if (!authReady) {
+                res.status(503).json({
+                    error: 'Authentication service not available',
+                    details: 'Database connection not ready. Please try again later.',
+                });
+                return;
+            }
+
+            const { username, password } = req.body;
+
+            if (!username || !password) {
+                res.status(400).json({
+                    error: 'Username and password are required',
+                });
+                return;
+            }
+
+            const result = await authService.login(username, password);
+
+            if (result.success) {
+                res.json({
+                    success: true,
+                    user: result.user,
+                    token: result.token,
+                    expiresIn: env.ADMIN_SESSION_EXPIRY,
+                });
+            } else {
+                res.status(401).json({
+                    success: false,
+                    error: result.error,
+                });
+            }
+        } catch (error) {
+            logger.error('Login error', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Authentication failed',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Handle verify token request
+     */
+    private async handleVerifyToken(req: Request, res: Response): Promise<void> {
+        try {
+            // Ensure auth service is initialized
+            const authReady = await this.ensureAuthServiceInit();
+            if (!authReady) {
+                res.status(503).json({
+                    error: 'Authentication service not available',
+                    details: 'Database connection not ready. Please try again later.',
+                });
+                return;
+            }
+
+            const { token } = req.body;
+
+            if (!token) {
+                res.status(400).json({
+                    error: 'Token is required',
+                });
+                return;
+            }
+
+            const payload = authService.verifyToken(token);
+
+            if (payload) {
+                // Get user info
+                const user = await authService.getUserById(payload.userId);
+                res.json({
+                    valid: true,
+                    user,
+                    payload,
+                });
+            } else {
+                res.status(401).json({
+                    valid: false,
+                    error: 'Invalid or expired token',
+                });
+            }
+        } catch (error) {
+            logger.error('Verify token error', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+            res.status(500).json({
+                error: 'Token verification failed',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
      * Start the API server
      */
     async start(): Promise<void> {
@@ -2081,6 +3226,9 @@ ${context?.language ? `Language: ${context.language}` : ''}`;
 
             // Initialize model configurations from database
             await modelConfigService.initialize();
+
+            // Initialize GPT Plus client (load session from DB)
+            await gptPlusClient.initialize();
         } else {
             logger.warn('Database not ready after timeout, skipping DB initialization');
         }

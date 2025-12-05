@@ -95,16 +95,28 @@ export class MCPClient {
     getCurrentContext(): Pick<MCPRequest, 'context'> {
         const cwd = process.cwd();
 
-        // Get list of files in directory
+        // Get list of files in directory (cross-platform)
         const files: string[] = [];
         try {
-            const items = execSync('ls -1', { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] })
-                .trim()
-                .split('\n')
-                .filter(f => f && !f.startsWith('.'));
-            files.push(...items.slice(0, 20)); // Max 20 files
-        } catch {
-            // ls not available or error
+            const fs = require('fs');
+            const items = fs.readdirSync(cwd, { withFileTypes: true })
+                .filter((dirent: any) => !dirent.name.startsWith('.'))
+                .map((dirent: any) => dirent.name)
+                .slice(0, 20); // Max 20 files
+            files.push(...items);
+        } catch (error) {
+            // Fallback to shell command
+            try {
+                const isWindows = process.platform === 'win32';
+                const command = isWindows ? 'dir /B' : 'ls -1';
+                const items = execSync(command, { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] })
+                    .trim()
+                    .split(isWindows ? '\r\n' : '\n')
+                    .filter(f => f && !f.startsWith('.'));
+                files.push(...items.slice(0, 20));
+            } catch {
+                console.warn('Warning: Could not scan directory files');
+            }
         }
 
         // Try to get git status if in a git repo

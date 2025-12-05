@@ -1,14 +1,18 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Key, Terminal, Users, Cpu, Settings as SettingsIcon, Menu, X, BarChart3, Bell, Database, Zap } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, Key, Terminal, Users, Cpu, Settings as SettingsIcon, Menu, X, BarChart3, Bell, Database, Zap, MessageSquare, SquareTerminal, MessagesSquare, LogOut, User } from 'lucide-react';
 
 interface LayoutProps {
   children: ReactNode;
+  onLogout?: () => void;
+  user?: any;
+  authEnabled?: boolean;
 }
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'AI Chat', href: '/chat', icon: MessagesSquare },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Gateway Tokens', href: '/tokens', icon: Key },
   { name: 'Docker Logs', href: '/logs', icon: Terminal },
@@ -17,13 +21,23 @@ const navigation = [
   { name: 'Database', href: '/database', icon: Database },
   { name: 'Redis', href: '/redis', icon: Database },
   { name: 'OpenRouter Info', href: '/openrouter', icon: Zap },
+  { name: 'GPT Plus', href: '/gpt-plus', icon: MessageSquare },
+  { name: 'Web Terminal', href: '/terminal', icon: SquareTerminal },
   { name: 'Alerts', href: '/alerts', icon: Bell },
   { name: 'Settings', href: '/settings', icon: SettingsIcon },
 ];
 
-export default function Layout({ children }: LayoutProps) {
+export default function Layout({ children, onLogout, user, authEnabled }: LayoutProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleLogout = () => {
+    if (onLogout) {
+      onLogout();
+    }
+    navigate('/login');
+  };
 
   return (
     <div className="min-h-screen bg-slate-900">
@@ -70,7 +84,7 @@ export default function Layout({ children }: LayoutProps) {
           <div className="flex items-center p-6 border-b border-slate-700">
             <h1 className="text-xl font-bold text-white">AI MCP Gateway</h1>
           </div>
-          <nav className="flex-1 p-4">
+          <nav className="flex-1 p-4 overflow-y-auto">
             <ul className="space-y-2">
               {navigation.map((item) => {
                 const Icon = item.icon;
@@ -93,6 +107,30 @@ export default function Layout({ children }: LayoutProps) {
               })}
             </ul>
           </nav>
+          
+          {/* User info & Logout (only show when auth is enabled) */}
+          {authEnabled && user && (
+            <div className="p-4 border-t border-slate-700">
+              <div className="flex items-center gap-3 mb-3 px-3">
+                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                  <User className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white truncate">
+                    {user.display_name || user.username}
+                  </p>
+                  <p className="text-xs text-slate-400 truncate">{user.role}</p>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-red-600/20 hover:text-red-400 transition-colors"
+              >
+                <LogOut className="w-5 h-5" />
+                Sign Out
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

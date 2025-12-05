@@ -12,7 +12,7 @@ async function checkModels() {
             FROM model_configs 
             ORDER BY layer, priority
         `);
-        
+
         console.log('Models in database:');
         result.rows.forEach(row => {
             console.log(`- ${row.id} (${row.layer}) - enabled: ${row.enabled}, priority: ${row.priority}`);

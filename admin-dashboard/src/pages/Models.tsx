@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Power, PowerOff, RefreshCw, Plus, Trash2, Edit2, Save, X, ArrowUp, ArrowDown } from 'lucide-react';
 import axios from 'axios';
+import ModelFormModal, { type ModelFormData } from '../components/ModelFormModal';
 
 const API_BASE = 'http://localhost:3000';
 
@@ -14,7 +15,7 @@ interface Model {
   pricePer1kOutputTokens?: number;
   contextWindow?: number;
   enabled: boolean;
-  priority?: number; // New: model priority within layer
+  priority?: number; // Model priority within layer
   capabilities?: {
     code?: boolean;
     general?: boolean;
@@ -33,24 +34,18 @@ interface LayersData {
   [key: string]: Layer;
 }
 
-interface EditModelData {
-  provider: string;
-  apiModelName: string;
-  layer: string;
-  relativeCost: number;
-  pricePer1kInputTokens: number;
-  pricePer1kOutputTokens: number;
-  contextWindow: number;
-}
-
 export default function Models() {
   const [layers, setLayers] = useState<LayersData>({});
   const [, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingLayer, setEditingLayer] = useState<string | null>(null);
-  const [editingModel, setEditingModel] = useState<{ id: string; data: EditModelData } | null>(null);
-  const [newModel, setNewModel] = useState({ provider: '', apiModelName: '' });
+  const [editingModel, setEditingModel] = useState<{ id: string; priority?: number; data: ModelFormData } | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  
+  // Modal state for the reusable ModelFormModal
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<'create' | 'edit'>('edit');
+  const [addingToLayer, setAddingToLayer] = useState<string | null>(null);
 
   useEffect(() => {
     loadLayers();
@@ -102,27 +97,12 @@ export default function Models() {
     }
   }
 
-  async function addModel(layerName: string) {
-    if (!newModel.provider.trim() || !newModel.apiModelName.trim()) return;
-    
-    try {
-      const modelId = `${newModel.provider}-${newModel.apiModelName.replace(/\//g, '-')}`;
-      await axios.post(`${API_BASE}/v1/models`, {
-        id: modelId,
-        provider: newModel.provider,
-        apiModelName: newModel.apiModelName,
-        layer: layerName,
-        enabled: true
-      });
-      
-      setNewModel({ provider: '', apiModelName: '' });
-      setSaveStatus(`Model added to ${layerName}`);
-      setTimeout(() => setSaveStatus(null), 3000);
-      loadLayers(); // Reload to get updated data
-    } catch (err) {
-      console.error('Failed to add model:', err);
-      setError(err instanceof Error ? err.message : 'Failed to add model');
-    }
+  // Open modal to add a new model to a specific layer
+  function openAddModal(layerName: string) {
+    setAddingToLayer(layerName);
+    setEditingModel(null);
+    setModalMode('create');
+    setIsModalOpen(true);
   }
 
   async function removeModel(layerName: string, modelId: string, modelName: string) {
@@ -173,8 +153,10 @@ export default function Models() {
   }
 
   function openEditModal(model: Model) {
+    setAddingToLayer(null);
     setEditingModel({
       id: model.id,
+      priority: model.priority,
       data: {
         provider: model.provider,
         apiModelName: model.apiModelName,
@@ -185,38 +167,44 @@ export default function Models() {
         contextWindow: model.contextWindow || 8192,
       }
     });
+    setModalMode('edit');
+    setIsModalOpen(true);
   }
 
-  async function saveEditModel() {
-    if (!editingModel) return;
-
-    try {
-      await axios.put(`${API_BASE}/v1/models/${editingModel.id}`, editingModel.data);
-      setSaveStatus(`Model ${editingModel.id} updated`);
-      setTimeout(() => setSaveStatus(null), 3000);
-      setEditingModel(null);
-      loadLayers();
-    } catch (err) {
-      console.error('Failed to update model:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update model');
+  async function handleModalSave(data: ModelFormData, modelId?: string) {
+    if (modalMode === 'edit' && modelId) {
+      // Update existing model
+      await axios.put(`${API_BASE}/v1/models/${modelId}`, data);
+      setSaveStatus(`Model ${modelId} updated`);
+    } else {
+      // Create new model - use addingToLayer if set, otherwise data.layer
+      const targetLayer = addingToLayer || data.layer;
+      const newModelId = `${data.provider}-${data.apiModelName.replace(/\//g, '-')}`;
+      await axios.post(`${API_BASE}/v1/models`, {
+        id: newModelId,
+        ...data,
+        layer: targetLayer,
+        enabled: true,
+      });
+      setSaveStatus(`Model added to ${targetLayer}`);
     }
+    setTimeout(() => setSaveStatus(null), 3000);
+    loadLayers();
   }
 
-  function closeEditModal() {
+  function closeModal() {
+    setIsModalOpen(false);
     setEditingModel(null);
+    setAddingToLayer(null);
   }
 
-  function cancelEditing() {
-    setEditingLayer(null);
-    setNewModel({ provider: '', apiModelName: '' });
-  }
-
-  // Model ordering functions
+  // Model ordering functions - reorder all models in layer at once
   async function moveModel(layerName: string, modelId: string, direction: 'up' | 'down') {
     const layer = layers[layerName];
     if (!layer) return;
 
-    const models = [...layer.models];
+    // Sort models by current priority first
+    const models = [...layer.models].sort((a, b) => (a.priority || 0) - (b.priority || 0));
     const currentIndex = models.findIndex(m => m.id === modelId);
     
     if (currentIndex === -1) return;
@@ -225,7 +213,7 @@ export default function Models() {
     
     if (newIndex < 0 || newIndex >= models.length) return;
 
-    // Swap models
+    // Swap models in the array
     [models[currentIndex], models[newIndex]] = [models[newIndex], models[currentIndex]];
     
     // Update priorities based on new order
@@ -233,7 +221,7 @@ export default function Models() {
       model.priority = index;
     });
 
-    // Update local state immediately
+    // Update local state immediately for responsive UI
     setLayers(prev => ({
       ...prev,
       [layerName]: {
@@ -243,12 +231,10 @@ export default function Models() {
     }));
 
     try {
-      // Save new order to backend
-      await axios.put(`${API_BASE}/v1/models/${modelId}`, {
-        ...models[newIndex],
-        priority: newIndex
-      });
-      setSaveStatus(`Model order updated`);
+      // Use the reorder API to update all priorities at once
+      const modelIds = models.map(m => m.id);
+      await axios.put(`${API_BASE}/v1/layers/${layerName}/reorder`, { modelIds });
+      setSaveStatus(`Model order updated in ${layerName}`);
       setTimeout(() => setSaveStatus(null), 2000);
     } catch (err) {
       console.error('Failed to update model order:', err);
@@ -366,51 +352,16 @@ export default function Models() {
                 </div>
               </div>
 
-              {/* Add Model Form */}
+              {/* Add Model Button - opens full modal */}
               {isEditing && (
-                <div className="mb-4 p-4 bg-slate-700/30 rounded-lg border border-slate-600">
-                  <h3 className="text-sm font-semibold text-white mb-3">Add New Model</h3>
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Provider</label>
-                        <input
-                          type="text"
-                          value={newModel.provider}
-                          onChange={(e) => setNewModel({ ...newModel, provider: e.target.value })}
-                          placeholder="e.g., openrouter"
-                          className="input w-full"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Model Name</label>
-                        <input
-                          type="text"
-                          value={newModel.apiModelName}
-                          onChange={(e) => setNewModel({ ...newModel, apiModelName: e.target.value })}
-                          placeholder="e.g., openai/gpt-4o"
-                          className="input w-full"
-                          onKeyPress={(e) => e.key === 'Enter' && addModel(layerName)}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => addModel(layerName)}
-                        disabled={!newModel.provider.trim() || !newModel.apiModelName.trim()}
-                        className="btn-primary flex items-center gap-2"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add Model
-                      </button>
-                      <button
-                        onClick={cancelEditing}
-                        className="btn-secondary"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
+                <div className="mb-4">
+                  <button
+                    onClick={() => openAddModal(layerName)}
+                    className="btn-primary flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add New Model to {layerName}
+                  </button>
                 </div>
               )}
 
@@ -507,8 +458,14 @@ export default function Models() {
                 <div className="text-center py-8 text-slate-400">
                   No models configured for this layer
                   {isEditing && (
-                    <div className="mt-2 text-sm">
-                      Use the form above to add models
+                    <div className="mt-3">
+                      <button
+                        onClick={() => openAddModal(layerName)}
+                        className="btn-primary flex items-center gap-2 mx-auto"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add First Model to {layerName}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -524,135 +481,16 @@ export default function Models() {
         </div>
       )}
 
-      {/* Edit Model Modal */}
-      {editingModel && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-700">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-white">Edit Model</h2>
-                <button onClick={closeEditModal} className="text-slate-400 hover:text-white">
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-              <p className="text-sm text-slate-400 mt-1">Model ID: {editingModel.id}</p>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Provider</label>
-                  <input
-                    type="text"
-                    value={editingModel.data.provider}
-                    onChange={(e) => setEditingModel({ 
-                      ...editingModel, 
-                      data: { ...editingModel.data, provider: e.target.value }
-                    })}
-                    className="input w-full"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">API Model Name</label>
-                  <input
-                    type="text"
-                    value={editingModel.data.apiModelName}
-                    onChange={(e) => setEditingModel({ 
-                      ...editingModel, 
-                      data: { ...editingModel.data, apiModelName: e.target.value }
-                    })}
-                    className="input w-full"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Layer</label>
-                  <select
-                    value={editingModel.data.layer}
-                    onChange={(e) => setEditingModel({ 
-                      ...editingModel, 
-                      data: { ...editingModel.data, layer: e.target.value }
-                    })}
-                    className="input w-full"
-                  >
-                    <option value="L0">L0 - Free/Cheapest</option>
-                    <option value="L1">L1 - Low Cost</option>
-                    <option value="L2">L2 - Medium Cost</option>
-                    <option value="L3">L3 - Premium</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Relative Cost</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={editingModel.data.relativeCost}
-                    onChange={(e) => setEditingModel({ 
-                      ...editingModel, 
-                      data: { ...editingModel.data, relativeCost: parseFloat(e.target.value) || 0 }
-                    })}
-                    className="input w-full"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Price per 1k Input Tokens ($)</label>
-                  <input
-                    type="number"
-                    step="0.000001"
-                    value={editingModel.data.pricePer1kInputTokens}
-                    onChange={(e) => setEditingModel({ 
-                      ...editingModel, 
-                      data: { ...editingModel.data, pricePer1kInputTokens: parseFloat(e.target.value) || 0 }
-                    })}
-                    className="input w-full"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Price per 1k Output Tokens ($)</label>
-                  <input
-                    type="number"
-                    step="0.000001"
-                    value={editingModel.data.pricePer1kOutputTokens}
-                    onChange={(e) => setEditingModel({ 
-                      ...editingModel, 
-                      data: { ...editingModel.data, pricePer1kOutputTokens: parseFloat(e.target.value) || 0 }
-                    })}
-                    className="input w-full"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Context Window</label>
-                <input
-                  type="number"
-                  value={editingModel.data.contextWindow}
-                  onChange={(e) => setEditingModel({ 
-                    ...editingModel, 
-                    data: { ...editingModel.data, contextWindow: parseInt(e.target.value) || 8192 }
-                  })}
-                  className="input w-full"
-                />
-              </div>
-            </div>
-
-            <div className="p-6 border-t border-slate-700 flex items-center justify-end gap-3">
-              <button onClick={closeEditModal} className="btn-secondary">
-                Cancel
-              </button>
-              <button onClick={saveEditModel} className="btn-primary flex items-center gap-2">
-                <Save className="w-4 h-4" />
-                Save Changes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Model Modal - Using reusable ModelFormModal component */}
+      <ModelFormModal
+        isOpen={isModalOpen}
+        mode={modalMode}
+        initialData={modalMode === 'edit' ? editingModel?.data : (addingToLayer ? { layer: addingToLayer } : undefined)}
+        modelId={editingModel?.id}
+        currentPriority={editingModel?.priority}
+        onSave={handleModalSave}
+        onClose={closeModal}
+      />
     </div>
   );
 }

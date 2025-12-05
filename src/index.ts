@@ -1,14 +1,73 @@
-import { startMCPServer } from './mcp/server.js';
-import { apiServer } from './api/server.js';
-import { db } from './db/postgres.js';
-import { redisCache } from './cache/redis.js';
-import { logger } from './logging/logger.js';
-import { selfImprovement } from './improvement/manager.js';
-import { providerManager } from './config/provider-manager.js';
+/**
+ * @file Main entry point for AI MCP Gateway
+ * @description Intelligent AI Model orchestration gateway supporting multiple operation modes:
+ * 
+ * **Operation Modes:**
+ * - **CLI Mode**: Command-line interface for system management (status, models, providers, db, config)
+ * - **MCP Mode**: Model Context Protocol server for AI tool integration (stdio transport)
+ * - **API Mode**: HTTP REST API server for web applications and integrations
+ * 
+ * **Architecture:**
+ * - N-layer routing: Routes requests to models based on cost/capability/priority
+ * - Multi-provider support: OpenAI, Anthropic, OpenRouter, Local (Ollama)
+ * - Database-driven configuration: Model priorities stored in PostgreSQL
+ * - Redis caching: Response caching and session management
+ * 
+ * @author AI MCP Gateway Team
+ * @version 1.0.0
+ * @see {@link docs/ARCHITECTURE.md} for system architecture details
+ */
+
+// Make this a module for top-level await support
+export { };
 
 /**
- * Main entry point for AI MCP Gateway
- * Supports both MCP mode (stdio) and HTTP API mode
+ * Command-line arguments passed to the application.
+ * First argument determines the operation mode or CLI command.
+ */
+const args = process.argv.slice(2);
+const firstArg = args[0]?.toLowerCase();
+
+/**
+ * CLI commands that run without server initialization.
+ * These commands use the lightweight CLI module and exit immediately.
+ * @see {@link ./cli/index.ts} for CLI implementation
+ */
+const cliCommands = ['help', '--help', '-h', 'status', 'models', 'providers', 'db', 'config', '--version', '-v'];
+
+// Early exit for CLI commands - avoids loading heavy server modules (db, redis, etc.)
+if (firstArg && cliCommands.some(cmd => firstArg === cmd || firstArg.startsWith(cmd))) {
+    // Dynamic import to avoid loading server modules
+    const { runCLI } = await import('./cli/index.js');
+    await runCLI(args);
+    process.exit(0);
+}
+
+/**
+ * Server modules - dynamically imported only when running in server mode.
+ * This pattern keeps CLI commands fast by avoiding unnecessary module loading.
+ */
+const { startMCPServer } = await import('./mcp/server.js');
+const { apiServer } = await import('./api/server.js');
+const { db } = await import('./db/postgres.js');
+const { redisCache } = await import('./cache/redis.js');
+const { logger } = await import('./logging/logger.js');
+const { selfImprovement } = await import('./improvement/manager.js');
+const { providerManager } = await import('./config/provider-manager.js');
+
+/**
+ * Main application bootstrap function.
+ * Initializes all services and starts the appropriate server mode.
+ * 
+ * @async
+ * @throws {Error} If server initialization fails
+ * 
+ * **Initialization sequence:**
+ * 1. Initialize self-improvement tables (learning from past requests)
+ * 2. Load provider configurations from environment variables
+ * 3. Initialize distributed tracing (if database available)
+ * 4. Start server in configured mode (API or MCP)
+ * 5. Register graceful shutdown handlers
  */
 async function main() {
     try {

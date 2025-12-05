@@ -5,7 +5,9 @@
 
 import { Router, Request, Response } from 'express';
 import { providerManager, ProviderName } from '../config/provider-manager.js';
+import { providerHealth } from '../config/provider-health.js';
 import { logger } from '../logging/logger.js';
+import type { ModelProvider } from '../config/models.js';
 
 export function createProviderRoutes(): Router {
     const router = Router();
@@ -179,6 +181,56 @@ export function createProviderRoutes(): Router {
             });
         } catch (error) {
             logger.error('Failed to disable provider', { error });
+            res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    });
+
+    /**
+     * POST /v1/providers/:providerName/reset
+     * Reset provider health status
+     */
+    router.post('/:providerName/reset', async (req: Request, res: Response) => {
+        try {
+            const { providerName } = req.params;
+
+            providerHealth.resetProvider(providerName as ModelProvider);
+
+            // Force recheck
+            const isHealthy = await providerHealth.isProviderHealthy(providerName as ModelProvider);
+
+            res.json({
+                success: true,
+                message: `Provider ${providerName} health status reset`,
+                isHealthy
+            });
+        } catch (error) {
+            logger.error('Failed to reset provider', { error });
+            res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    });
+
+    /**
+     * POST /v1/providers/refresh-all
+     * Refresh health status for all providers
+     */
+    router.post('/refresh-all', async (_req: Request, res: Response) => {
+        try {
+            await providerHealth.refreshAllProviders();
+            const summary = providerHealth.getProviderStatusSummary();
+
+            res.json({
+                success: true,
+                message: 'All providers refreshed',
+                status: summary
+            });
+        } catch (error) {
+            logger.error('Failed to refresh providers', { error });
             res.status(500).json({
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error'

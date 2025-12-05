@@ -313,13 +313,16 @@ export function isLayerEnabled(layer: ModelLayer): boolean {
 
 /**
  * Get models by layer (respects layer enable/disable setting)
+ * Sorted by priority ASC (0 = highest priority)
  */
 export function getModelsByLayer(layer: ModelLayer): ModelConfig[] {
     if (!isLayerEnabled(layer)) {
         logger.warn(`Layer ${layer} is disabled in configuration`);
         return [];
     }
-    return MODEL_CATALOG.filter((m) => m.layer === layer && m.enabled);
+    return MODEL_CATALOG
+        .filter((m) => m.layer === layer && m.enabled)
+        .sort((a, b) => (a.priority || 0) - (b.priority || 0));
 }
 
 /**
@@ -374,23 +377,33 @@ export async function fetchOpenRouterFreeModels(): Promise<ModelConfig[]> {
         context_length?: number;
     }
 
-    interface OpenRouterResponse {
-        data: OpenRouterModel[];
-    }
-
     try {
-        const response = await fetch('https://openrouter.ai/api/v1/models', {
-            headers: {
-                'Authorization': `Bearer ${env.OPENROUTER_API_KEY || ''}`,
-            },
-        });
+        // Use OpenRouter SDK if available, fallback to fetch API
+        let data: { data: OpenRouterModel[] };
 
-        if (!response.ok) {
-            logger.warn('Failed to fetch OpenRouter models', { status: response.status });
-            return [];
+        try {
+            const { OpenRouter } = await import('@openrouter/sdk');
+            const client = new OpenRouter({
+                apiKey: env.OPENROUTER_API_KEY || '',
+            });
+            const response = await client.models.list();
+            data = response;
+        } catch (sdkError) {
+            // Fallback to direct API call if SDK fails
+            logger.warn('OpenRouter SDK failed, using fallback API', { error: sdkError });
+            const response = await fetch('https://openrouter.ai/api/v1/models', {
+                headers: {
+                    'Authorization': `Bearer ${env.OPENROUTER_API_KEY || ''}`,
+                },
+            });
+
+            if (!response.ok) {
+                logger.warn('Failed to fetch OpenRouter models', { status: response.status });
+                return [];
+            }
+
+            data = await response.json();
         }
-
-        const data = await response.json() as OpenRouterResponse;
 
         // Filter free models and sort by ranking
         const freeModels = data.data
@@ -493,9 +506,10 @@ export function getTaskSpecificModels(taskType: string, layer: ModelLayer): Mode
 
 /**
  * Get models for a specific layer with fallback to OpenRouter
+ * Sorted by priority ASC (0 = highest priority)
  */
 export async function getModelsByLayerWithFallback(layer: ModelLayer): Promise<ModelConfig[]> {
-    const models = getModelsByLayer(layer);
+    const models = getModelsByLayer(layer); // Already sorted by priority
 
     // If L0 has no models, fetch from OpenRouter
     if (layer === 'L0' && models.length === 0) {
@@ -505,7 +519,8 @@ export async function getModelsByLayerWithFallback(layer: ModelLayer): Promise<M
         if (openrouterModels.length > 0) {
             // Add to catalog temporarily
             MODEL_CATALOG.push(...openrouterModels);
-            return openrouterModels;
+            // Sort by priority before returning
+            return openrouterModels.sort((a, b) => (a.priority || 0) - (b.priority || 0));
         }
     }
 

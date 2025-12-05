@@ -10,11 +10,17 @@ import {
   CheckCircle,
   Clock,
   Pause,
-  Play
+  Play,
+  Plus
 } from 'lucide-react';
+import ModelFormModal, { 
+  mapOpenRouterToModelForm, 
+  type ModelFormData 
+} from '../components/ModelFormModal';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 
+// Model interface matching OpenRouter API response
 interface Model {
   id: string;
   name: string;
@@ -59,6 +65,13 @@ interface CachedData<T> {
 // Cache duration: 10 seconds
 const CACHE_DURATION = 10 * 1000;
 
+// Track which models have been added to Model Layers
+interface AddedModelInfo {
+  id: string;
+  layer: string;
+  addedAt: number;
+}
+
 export default function OpenRouterInfo() {
   const [activeTab, setActiveTab] = useState<'models' | 'limits' | 'credits' | 'activity'>('models');
   const [loading, setLoading] = useState(false);
@@ -72,6 +85,12 @@ export default function OpenRouterInfo() {
   const [activity, setActivity] = useState<ActivityItem[]>([]);
 
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Modal state for "Add to Models"
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<Model | null>(null);
+  const [addedModels, setAddedModels] = useState<AddedModelInfo[]>([]);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Cache for API responses
   const cacheRef = useRef<{
@@ -246,6 +265,51 @@ export default function OpenRouterInfo() {
     setActivity(data);
   }
 
+  // ===== Add to Models functionality =====
+  
+  /**
+   * Open the modal to add an OpenRouter model to Model Layers
+   */
+  function handleAddToModels(model: Model) {
+    setSelectedModel(model);
+    setIsModalOpen(true);
+  }
+
+  /**
+   * Check if a model has already been added
+   */
+  function isModelAdded(modelId: string): AddedModelInfo | undefined {
+    return addedModels.find(m => m.id === modelId);
+  }
+
+  /**
+   * Handle save from the modal - creates a new model in Model Layers
+   */
+  async function handleSaveModel(data: ModelFormData) {
+    const modelId = `${data.provider}-${data.apiModelName.replace(/\//g, '-')}`;
+    
+    await axios.post(`${API_BASE}/v1/models`, {
+      id: modelId,
+      ...data,
+      enabled: true,
+    });
+
+    // Track that this model was added
+    setAddedModels(prev => [
+      ...prev,
+      { id: selectedModel?.id || '', layer: data.layer, addedAt: Date.now() }
+    ]);
+
+    // Show success message
+    setSuccessMessage(`Đã thêm model "${selectedModel?.name || selectedModel?.id}" vào layer ${data.layer}`);
+    setTimeout(() => setSuccessMessage(null), 5000);
+  }
+
+  function closeModal() {
+    setIsModalOpen(false);
+    setSelectedModel(null);
+  }
+
   const filteredModels = models.filter(m => 
     m.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
     m.name?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -364,6 +428,16 @@ export default function OpenRouterInfo() {
         </div>
       )}
 
+      {/* Success notification */}
+      {successMessage && (
+        <div className="card p-4 border-green-500/50 bg-green-500/10">
+          <div className="flex items-center gap-2 text-green-400">
+            <CheckCircle className="w-5 h-5" />
+            <span>{successMessage}</span>
+          </div>
+        </div>
+      )}
+
       {!loading && activeTab === 'models' && (
         <div className="space-y-4">
           <input
@@ -379,31 +453,55 @@ export default function OpenRouterInfo() {
               Found {filteredModels.length} models
             </p>
             <div className="space-y-2 max-h-[600px] overflow-y-auto">
-              {filteredModels.map((model) => (
-                <div key={model.id} className="p-3 bg-slate-800/50 rounded border border-slate-700 hover:border-blue-500/50">
+              {filteredModels.map((model) => {
+                const addedInfo = isModelAdded(model.id);
+                return (
+                <div key={model.id} className={`p-3 bg-slate-800/50 rounded border ${addedInfo ? 'border-green-500/50' : 'border-slate-700'} hover:border-blue-500/50 transition-colors`}>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <h3 className="font-semibold text-white">{model.name || model.id}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-white">{model.name || model.id}</h3>
+                        {addedInfo && (
+                          <span className="badge badge-success text-xs">
+                            Added ({addedInfo.layer})
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-slate-400 font-mono mt-1">{model.id}</p>
                       {model.description && (
                         <p className="text-sm text-slate-300 mt-2 line-clamp-2">{model.description}</p>
                       )}
                     </div>
-                    {model.pricing && (
-                      <div className="text-right ml-4">
-                        <p className="text-xs text-slate-400">Pricing</p>
-                        <p className="text-xs text-green-400">Prompt: ${model.pricing.prompt}</p>
-                        <p className="text-xs text-yellow-400">Completion: ${model.pricing.completion}</p>
-                      </div>
-                    )}
+                    <div className="flex items-start gap-3 ml-4">
+                      {model.pricing && (
+                        <div className="text-right">
+                          <p className="text-xs text-slate-400">Pricing</p>
+                          <p className="text-xs text-green-400">Prompt: ${model.pricing.prompt}</p>
+                          <p className="text-xs text-yellow-400">Completion: ${model.pricing.completion}</p>
+                        </div>
+                      )}
+                      {/* Add to Models button */}
+                      <button
+                        onClick={() => handleAddToModels(model)}
+                        className={`btn-secondary flex items-center gap-1.5 text-sm ${
+                          addedInfo 
+                            ? 'bg-green-500/20 text-green-400 border-green-500/30' 
+                            : 'bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/30'
+                        }`}
+                        title={addedInfo ? `Already added to ${addedInfo.layer}. Click to add again.` : 'Add to Model Layers'}
+                      >
+                        <Plus className="w-4 h-4" />
+                        {addedInfo ? 'Add Again' : 'Add to Models'}
+                      </button>
+                    </div>
                   </div>
                   {model.context_length && (
                     <div className="mt-2 text-xs text-slate-400">
-                      Context: {model.context_length.toLocaleString()} tokens
+                      Context: {(typeof model.context_length === 'number' ? model.context_length : parseInt(model.context_length) || 0).toLocaleString()} tokens
                     </div>
                   )}
                 </div>
-              ))}
+              )})}
             </div>
           </div>
         </div>
@@ -421,11 +519,11 @@ export default function OpenRouterInfo() {
             </div>
             <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded">
               <span className="text-slate-400">Usage</span>
-              <span className="text-white font-semibold">{limits.usage.toLocaleString()}</span>
+              <span className="text-white font-semibold">{(typeof limits.usage === 'number' ? limits.usage : 0).toLocaleString()}</span>
             </div>
             <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded">
               <span className="text-slate-400">Limit</span>
-              <span className="text-white font-semibold">{limits.limit.toLocaleString()}</span>
+              <span className="text-white font-semibold">{(typeof limits.limit === 'number' ? limits.limit : 0).toLocaleString()}</span>
             </div>
             {limits.rate_limit && (
               <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded">
@@ -445,25 +543,25 @@ export default function OpenRouterInfo() {
           <div className="space-y-4">
             <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded">
               <span className="text-slate-400">Balance</span>
-              <span className="text-green-400 font-semibold text-xl">${credits.balance.toFixed(2)}</span>
+              <span className="text-green-400 font-semibold text-xl">${(typeof credits.balance === 'number' ? credits.balance : 0).toFixed(2)}</span>
             </div>
             <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded">
               <span className="text-slate-400">Usage</span>
-              <span className="text-red-400 font-semibold">${credits.usage.toFixed(2)}</span>
+              <span className="text-red-400 font-semibold">${(typeof credits.usage === 'number' ? credits.usage : 0).toFixed(2)}</span>
             </div>
             <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded">
               <span className="text-slate-400">Limit</span>
-              <span className="text-white font-semibold">${credits.limit.toFixed(2)}</span>
+              <span className="text-white font-semibold">${(typeof credits.limit === 'number' ? credits.limit : 0).toFixed(2)}</span>
             </div>
             <div className="mt-4">
               <div className="w-full bg-slate-700 rounded-full h-3">
                 <div
                   className="bg-gradient-to-r from-green-500 to-blue-500 h-3 rounded-full"
-                  style={{ width: `${Math.min((credits.usage / credits.limit) * 100, 100)}%` }}
+                  style={{ width: `${Math.min(((typeof credits.usage === 'number' ? credits.usage : 0) / (typeof credits.limit === 'number' ? credits.limit : 1)) * 100, 100)}%` }}
                 />
               </div>
               <p className="text-xs text-slate-400 mt-2 text-center">
-                {((credits.usage / credits.limit) * 100).toFixed(1)}% used
+                {(((typeof credits.usage === 'number' ? credits.usage : 0) / (typeof credits.limit === 'number' ? credits.limit : 1)) * 100).toFixed(1)}% used
               </p>
             </div>
           </div>
@@ -488,8 +586,8 @@ export default function OpenRouterInfo() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-green-400 font-semibold">${item.total_cost.toFixed(4)}</p>
-                      <p className="text-xs text-slate-400">{item.generations} generations</p>
+                      <p className="text-green-400 font-semibold">${(typeof item.total_cost === 'number' ? item.total_cost : 0).toFixed(4)}</p>
+                      <p className="text-xs text-slate-400">{item.generations || 0} generations</p>
                     </div>
                   </div>
                 </div>
@@ -498,6 +596,16 @@ export default function OpenRouterInfo() {
           )}
         </div>
       )}
+
+      {/* Add to Models Modal */}
+      <ModelFormModal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        onSave={handleSaveModel}
+        mode="create"
+        initialData={selectedModel ? mapOpenRouterToModelForm(selectedModel) : undefined}
+        sourceModelName={selectedModel?.name || selectedModel?.id || undefined}
+      />
     </div>
   );
 }

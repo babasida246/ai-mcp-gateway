@@ -116,9 +116,9 @@ export function createDatabaseRoutes(): Router {
      * GET /v1/redis/info
      * Get Redis server info and statistics
      */
-    router.get('/key/:key', async (req: Request, res: Response) => {
+    router.get('/redis/info', async (_req: Request, res: Response) => {
         try {
-            const client = redisCache.getClient(); nt(); nt();
+            const client = redisCache.getClient();
 
             // Get info
             const info = await client.info();
@@ -175,7 +175,7 @@ export function createDatabaseRoutes(): Router {
             const pattern = (req.query.pattern as string) || '*';
             const limit = parseInt(req.query.limit as string) || 100;
 
-            const client = redis.getClient();
+            const client = redisCache.getClient();
 
             // Use SCAN instead of KEYS for better performance
             let cursor = 0;
@@ -216,7 +216,7 @@ export function createDatabaseRoutes(): Router {
     router.get('/redis/key/:key', async (req: Request, res: Response) => {
         try {
             const { key } = req.params;
-            const client = redis.getClient();
+            const client = redisCache.getClient();
 
             // Get key type
             const type = await client.type(key);

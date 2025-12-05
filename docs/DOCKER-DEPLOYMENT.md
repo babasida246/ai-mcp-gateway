@@ -1,126 +1,75 @@
-# Docker Deployment Guide - AI MCP Gateway
+# Docker Deployment Guide
 
-Hướng dẫn deploy hệ thống AI MCP Gateway bằng Docker và Docker Compose.
-
-## 📋 Yêu Cầu
-
-- Docker Engine 20.10+
-- Docker Compose 2.0+
-- Ít nhất 2GB RAM khả dụng
-- 5GB disk space
-
-## 🚀 Quick Start
-
-### 1. Cấu hình Environment Variables
+## Quick Start
 
 ```bash
-# Copy file example và chỉnh sửa
+# 1. Clone repository
+git clone https://github.com/babasida246/ai-mcp-gateway.git
+cd ai-mcp-gateway
+
+# 2. Setup environment
 cp .env.docker.example .env.docker
 
-# Chỉnh sửa .env.docker với API keys của bạn
-# Tối thiểu cần: OPENROUTER_API_KEY
-```
+# 3. Edit .env.docker and add your API keys
+# Required: OPENROUTER_API_KEY
 
-### 2. Start All Services
-
-```bash
-# Start tất cả services (Gateway + Redis + PostgreSQL)
+# 4. Start all services
 docker-compose --env-file .env.docker up -d
 
-# Xem logs
-docker-compose logs -f ai-mcp-gateway
-
-# Check status
+# 5. Check status
 docker-compose ps
 ```
 
-### 3. Verify Deployment
-
-```bash
-# Health check
-curl http://localhost:3000/health
-
-# Expected response:
-# {
-#   "status": "ok",
-#   "redis": true,
-#   "database": true,
-#   "timestamp": "..."
-# }
-```
-
-## 📦 Services
-
-Docker Compose sẽ khởi động các services sau:
+## Services
 
 | Service | Port | Description |
 |---------|------|-------------|
-| `ai-mcp-gateway` | 3000 | Main API server |
-| `redis` | 6379 | Cache layer |
-| `postgres` | 5432 | Database |
-| `ollama` (optional) | 11434 | Local LLM models |
+| ai-mcp-gateway | 3000 | Main API gateway |
+| ai-mcp-dashboard | 5173 | Admin dashboard |
+| ai-mcp-postgres | 5432 | PostgreSQL database |
+| ai-mcp-redis | 6379 | Redis cache |
 
-## 🔧 Configuration Options
+## Environment Variables
 
-### Minimal Setup (Chỉ OpenRouter)
+### Required
 
-```bash
-# .env.docker
-OPENROUTER_API_KEY=sk-or-v1-...
-POSTGRES_PASSWORD=secure_password
+```env
+OPENROUTER_API_KEY=sk-or-v1-your-key-here
 ```
 
-```bash
-docker-compose --env-file .env.docker up -d
-```
+### Optional
 
-### With Ollama (Local Models)
-
-```bash
-# .env.docker
-OPENROUTER_API_KEY=sk-or-v1-...
-OSS_MODEL_ENABLED=true
-OSS_MODEL_ENDPOINT=http://ollama:11434
-OSS_MODEL_NAME=llama3:8b
-POSTGRES_PASSWORD=secure_password
-```
-
-```bash
-# Start với Ollama profile
-docker-compose --env-file .env.docker --profile with-ollama up -d
-
-# Pull model vào Ollama
-docker exec ai-mcp-ollama ollama pull llama3:8b
-```
-
-### Full Stack (All Providers)
-
-```bash
-# .env.docker
-OPENROUTER_API_KEY=sk-or-v1-...
+```env
+# Other providers (optional)
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
-OSS_MODEL_ENABLED=true
-POSTGRES_PASSWORD=secure_password
-REDIS_PASSWORD=redis_password
+
+# Database (defaults provided)
+POSTGRES_USER=mcpuser
+POSTGRES_PASSWORD=mcppassword
+POSTGRES_DB=mcpgateway
+
+# Configuration
+LOG_LEVEL=info
+DEFAULT_LAYER=L0
 ```
 
-## 🛠️ Management Commands
+## Commands
 
-### Start/Stop
+### Start services
 
 ```bash
-# Start services
+# Start all
 docker-compose --env-file .env.docker up -d
 
-# Stop services
-docker-compose down
+# Start specific service
+docker-compose up -d ai-mcp-gateway
 
-# Stop và xóa volumes (WARNING: mất data!)
-docker-compose down -v
+# Rebuild and start
+docker-compose up -d --build
 ```
 
-### View Logs
+### View logs
 
 ```bash
 # All services
@@ -128,327 +77,178 @@ docker-compose logs -f
 
 # Specific service
 docker-compose logs -f ai-mcp-gateway
-docker-compose logs -f redis
-docker-compose logs -f postgres
 
 # Last 100 lines
 docker-compose logs --tail=100 ai-mcp-gateway
 ```
 
-### Restart Services
+### Stop services
 
 ```bash
-# Restart gateway only
+# Stop all
+docker-compose down
+
+# Stop and remove volumes (data loss!)
+docker-compose down -v
+```
+
+### Restart
+
+```bash
+# Restart single service
 docker-compose restart ai-mcp-gateway
 
 # Restart all
 docker-compose restart
 ```
 
-### Rebuild After Code Changes
+## Accessing Services
 
+### Gateway API
 ```bash
-# Rebuild image
-docker-compose build ai-mcp-gateway
-
-# Rebuild và restart
-docker-compose up -d --build ai-mcp-gateway
+curl http://localhost:3000/health
 ```
 
-## 🔍 Debugging
+### Admin Dashboard
+Open http://localhost:5173 in browser
 
-### Check Service Health
+Default login:
+- Username: `admin`
+- Password: `admin123`
+
+### Database
+```bash
+# Connect to PostgreSQL
+docker exec -it ai-mcp-postgres psql -U mcpuser -d mcpgateway
+
+# List tables
+\dt
+
+# Query models
+SELECT * FROM model_configs;
+```
+
+### Redis
+```bash
+# Connect to Redis CLI
+docker exec -it ai-mcp-redis redis-cli
+
+# Check keys
+KEYS *
+```
+
+## Troubleshooting
+
+### Container not starting
 
 ```bash
+# Check logs
+docker-compose logs ai-mcp-gateway
+
 # Check container status
 docker-compose ps
 
-# Inspect specific service
-docker-compose exec ai-mcp-gateway sh
-
-# Check Redis connection
-docker-compose exec redis redis-cli ping
-
-# Check PostgreSQL
-docker-compose exec postgres psql -U postgres -d ai_mcp_gateway -c '\dt'
-```
-
-### Common Issues
-
-#### 1. Port Already in Use
-
-```bash
-# Change ports in docker-compose.yml
-ports:
-  - "3001:3000"  # Host:Container
-```
-
-#### 2. Gateway Can't Connect to Redis/PostgreSQL
-
-```bash
-# Check network
+# Verify network
 docker network ls
-docker network inspect ai-mcp-gateway_ai-mcp-network
-
-# Ensure depends_on is working
-docker-compose logs redis
-docker-compose logs postgres
 ```
 
-#### 3. Out of Memory
+### Database connection issues
 
 ```bash
-# Add memory limits in docker-compose.yml
-services:
-  ai-mcp-gateway:
-    deploy:
-      resources:
-        limits:
-          memory: 1G
+# Check if postgres is healthy
+docker-compose ps ai-mcp-postgres
+
+# Wait for postgres to be ready
+docker-compose up -d ai-mcp-postgres
+sleep 10
+docker-compose up -d ai-mcp-gateway
 ```
 
-## 📊 Monitoring
-
-### Resource Usage
+### Port already in use
 
 ```bash
-# Real-time stats
-docker stats
+# Check what's using port 3000
+netstat -ano | findstr :3000
 
-# Specific container
-docker stats ai-mcp-gateway
+# Or on Linux/Mac
+lsof -i :3000
 
-# Server metrics (requests, tokens, cost)
-curl http://localhost:3000/v1/server-stats | jq
+# Change port in docker-compose.yml
+ports:
+  - "3001:3000"  # Use 3001 instead
 ```
 
-### Continuous Monitoring
+### Reset everything
 
 ```bash
-# Watch server stats every 5 seconds
-watch -n 5 'curl -s http://localhost:3000/v1/server-stats | jq ".requests, .llm, .memory"'
+# Stop all containers
+docker-compose down
 
-# Windows PowerShell
-while ($true) {
-    Clear-Host
-    (Invoke-WebRequest http://localhost:3000/v1/server-stats).Content | ConvertFrom-Json | ConvertTo-Json -Depth 3
-    Start-Sleep -Seconds 5
-}
+# Remove all data
+docker-compose down -v
+
+# Remove images
+docker-compose down --rmi all
+
+# Clean rebuild
+docker-compose build --no-cache
+docker-compose up -d
 ```
 
-See **[SERVER-STATS-GUIDE.md](SERVER-STATS-GUIDE.md)** for comprehensive monitoring guide.
+## Production Deployment
 
-### Database Queries
+### SSL/TLS
 
-```bash
-# Connect to PostgreSQL
-docker-compose exec postgres psql -U postgres -d ai_mcp_gateway
-
-# Useful queries:
-# SELECT * FROM llm_calls ORDER BY created_at DESC LIMIT 10;
-# SELECT COUNT(*) FROM llm_calls;
-```
-
-### Redis Cache
-
-```bash
-# Connect to Redis
-docker-compose exec redis redis-cli
-
-# Commands:
-# KEYS *
-# GET context:conversation_id:123
-# DBSIZE
-```
-
-## 🔐 Security Best Practices
-
-### Production Deployment
-
-1. **Change Default Passwords**
-```bash
-# .env.docker
-POSTGRES_PASSWORD=very_secure_random_password
-REDIS_PASSWORD=another_secure_password
-```
-
-2. **Restrict CORS**
-```bash
-# docker-compose.yml
-environment:
-  API_CORS_ORIGIN: "https://yourdomain.com"
-```
-
-3. **Use Secrets (Docker Swarm/Kubernetes)**
-```yaml
-secrets:
-  openrouter_key:
-    external: true
-services:
-  ai-mcp-gateway:
-    secrets:
-      - openrouter_key
-```
-
-4. **Enable SSL for PostgreSQL**
-```bash
-DB_SSL=true
-```
-
-## 🌐 Production Deployment
-
-### With Nginx Reverse Proxy
+Use a reverse proxy (nginx, traefik) for SSL termination:
 
 ```nginx
-# /etc/nginx/sites-available/ai-mcp-gateway
 server {
-    listen 80;
+    listen 443 ssl;
     server_name api.yourdomain.com;
-
+    
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+    
     location / {
         proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
     }
 }
 ```
 
-### With Docker Swarm
+### Environment Security
 
-```bash
-# Deploy as stack
-docker stack deploy -c docker-compose.yml ai-mcp-gateway
+1. Use Docker secrets for sensitive data
+2. Set `LOG_LEVEL=warn` in production
+3. Change default admin password
+4. Use strong database passwords
+5. Restrict network access
 
-# Scale gateway
-docker service scale ai-mcp-gateway_ai-mcp-gateway=3
-```
-
-### With Kubernetes
-
-```bash
-# Convert docker-compose to k8s manifests (using kompose)
-kompose convert -f docker-compose.yml
-
-# Deploy
-kubectl apply -f .
-```
-
-## 📦 Backup & Restore
-
-### PostgreSQL Backup
-
-```bash
-# Backup
-docker-compose exec postgres pg_dump -U postgres ai_mcp_gateway > backup.sql
-
-# Restore
-docker-compose exec -T postgres psql -U postgres ai_mcp_gateway < backup.sql
-```
-
-### Redis Backup
-
-```bash
-# Trigger save
-docker-compose exec redis redis-cli BGSAVE
-
-# Copy RDB file
-docker cp ai-mcp-redis:/data/dump.rdb ./redis-backup.rdb
-```
-
-### Volume Backup
-
-```bash
-# Backup all volumes
-docker run --rm \
-  -v ai-mcp-gateway_postgres-data:/data \
-  -v $(pwd):/backup \
-  alpine tar czf /backup/postgres-data.tar.gz /data
-```
-
-## 🧪 Testing
-
-### Run Tests in Docker
-
-```bash
-# Build test image
-docker build -t ai-mcp-gateway:test --target builder .
-
-# Run tests
-docker run --rm ai-mcp-gateway:test npm test
-```
-
-## 📈 Scaling
-
-### Horizontal Scaling
-
-```bash
-# Scale gateway instances
-docker-compose up -d --scale ai-mcp-gateway=3
-
-# Use load balancer (Nginx, HAProxy, Traefik)
-```
-
-### Resource Limits
+### Scaling
 
 ```yaml
-# docker-compose.yml
+# docker-compose.override.yml
 services:
   ai-mcp-gateway:
     deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-        reservations:
-          memory: 512M
+      replicas: 3
 ```
 
-## 🔄 Updates
+## Health Checks
 
-### Update to Latest Version
+Docker Compose includes health checks:
 
+```yaml
+healthcheck:
+  test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+```
+
+Check health status:
 ```bash
-# Pull latest code
-git pull origin master
-
-# Rebuild and restart
-docker-compose down
-docker-compose --env-file .env.docker up -d --build
+docker-compose ps
+# STATUS should show "healthy"
 ```
-
-### Rolling Update (Zero Downtime)
-
-```bash
-# Build new image with tag
-docker build -t ai-mcp-gateway:v0.2.0 .
-
-# Update one by one
-docker-compose up -d --no-deps --scale ai-mcp-gateway=2 ai-mcp-gateway
-```
-
-## 📝 Environment Variables Reference
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OPENROUTER_API_KEY` | - | OpenRouter API key (required) |
-| `OPENAI_API_KEY` | - | OpenAI API key (optional) |
-| `ANTHROPIC_API_KEY` | - | Anthropic API key (optional) |
-| `POSTGRES_PASSWORD` | postgres | PostgreSQL password |
-| `REDIS_PASSWORD` | - | Redis password (empty = no auth) |
-| `LOG_LEVEL` | info | Logging level |
-| `DEFAULT_LAYER` | L0 | Default routing layer |
-| `OSS_MODEL_ENABLED` | false | Enable Ollama |
-
-## 🆘 Support
-
-- **Logs**: `docker-compose logs -f`
-- **Health**: `curl http://localhost:3000/health`
-- **Issues**: Check GitHub Issues
-- **Docs**: See PROVIDER-FALLBACK-GUIDE.md
-
----
-
-**Happy Deploying! 🚀**

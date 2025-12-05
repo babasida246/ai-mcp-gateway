@@ -245,3 +245,58 @@ COMMENT ON TABLE model_configs IS 'Stores LLM model configurations including pri
 COMMENT ON TABLE layer_configs IS 'Stores layer enable/disable state and model assignments';
 COMMENT ON TABLE task_model_preferences IS 'Stores task-specific model preferences (chat, code, analyze, etc.)';
 
+-- ============================================
+-- Terminal Connection Profiles
+-- ============================================
+
+-- Terminal connection profiles table (for saving SSH/Telnet connection configs)
+CREATE TABLE IF NOT EXISTS terminal_connections (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(20) NOT NULL CHECK (type IN ('ssh', 'telnet', 'local')),
+    host VARCHAR(255),
+    port INTEGER DEFAULT 22,
+    username VARCHAR(255),
+    auth_type VARCHAR(20) DEFAULT 'password' CHECK (auth_type IN ('password', 'private_key', 'agent', 'none')),
+    -- Note: For security, passwords/private keys should be stored securely or referenced from a secrets manager
+    -- This is a simplified implementation for development
+    encrypted_credentials TEXT, -- Encrypted password or private key (optional)
+    is_default BOOLEAN DEFAULT false,
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_terminal_connections_type ON terminal_connections(type);
+CREATE INDEX IF NOT EXISTS idx_terminal_connections_is_default ON terminal_connections(is_default);
+
+CREATE TRIGGER update_terminal_connections_updated_at BEFORE UPDATE ON terminal_connections
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+COMMENT ON TABLE terminal_connections IS 'Stores saved terminal connection profiles for quick reconnection';
+
+-- ============================================
+-- Admin Users (for authentication)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS admin_users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    username VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL, -- bcrypt hash
+    email VARCHAR(255),
+    display_name VARCHAR(255),
+    role VARCHAR(50) DEFAULT 'admin' CHECK (role IN ('admin', 'viewer', 'operator')),
+    is_active BOOLEAN DEFAULT true,
+    last_login TIMESTAMP,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_username ON admin_users(username);
+
+CREATE TRIGGER update_admin_users_updated_at BEFORE UPDATE ON admin_users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+COMMENT ON TABLE admin_users IS 'Stores admin dashboard user accounts for authentication';

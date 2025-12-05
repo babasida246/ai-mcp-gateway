@@ -4,11 +4,14 @@
 
 -- Add priority column to model_configs table
 ALTER TABLE model_configs 
-ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 0;
+ADD COLUMN
+IF NOT EXISTS priority INTEGER DEFAULT 0;
 
 -- Add index for efficient priority-based sorting within layers
-CREATE INDEX IF NOT EXISTS idx_model_configs_layer_priority_enabled 
-ON model_configs (layer, priority ASC, enabled DESC);
+CREATE INDEX
+IF NOT EXISTS idx_model_configs_layer_priority_enabled 
+ON model_configs
+(layer, priority ASC, enabled DESC);
 
 -- Update existing models with default priorities based on current order
 -- L0 models

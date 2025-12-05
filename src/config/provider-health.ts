@@ -96,6 +96,15 @@ export class ProviderHealthManager {
     }
 
     /**
+     * Reset a provider's health status (force recheck on next call)
+     */
+    resetProvider(provider: ModelProvider): void {
+        this.healthStatus.delete(provider);
+        this.lastCheckTime.delete(provider);
+        logger.info(`Provider ${provider} health status reset`);
+    }
+
+    /**
      * Get all healthy providers
      */
     async getHealthyProviders(): Promise<ModelProvider[]> {

@@ -103,6 +103,19 @@ const envSchema = z.object({
         .string()
         .transform((val: string) => parseFloat(val))
         .default('1.00'),
+
+    // Admin Dashboard Authentication
+    ADMIN_AUTH_ENABLED: z
+        .string()
+        .transform((val: string) => val === 'true')
+        .default('false'),
+    ADMIN_JWT_SECRET: z.string().default('change-me-in-production-very-secret-key-32chars'),
+    ADMIN_SESSION_EXPIRY: z.string().default('24h'),
+    // Default admin credentials (should be changed in production)
+    ADMIN_DEFAULT_USERNAME: z.string().default('admin'),
+    ADMIN_DEFAULT_PASSWORD: z.string().default('admin123'),
+    // Terminal encryption key (32 bytes for AES-256)
+    TERMINAL_ENCRYPTION_KEY: z.string().default('terminal-encryption-key-32bytes!'),
 });
 
 export type Env = z.infer<typeof envSchema>;

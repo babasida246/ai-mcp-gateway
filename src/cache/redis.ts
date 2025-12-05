@@ -333,6 +333,13 @@ class RedisCache {
     isReady(): boolean {
         return this.isConnected;
     }
+
+    /**
+     * Get the raw Redis client for advanced operations
+     */
+    getClient(): Redis | null {
+        return this.client;
+    }
 }
 
 // Singleton instance
@@ -381,4 +388,7 @@ export const CacheKeys = {
     // Feature flags
     featureFlag: (flag: string) =>
         `feature:${flag}`,
+
+    // Agent memory cache
+    agentMemory: `agent:memory`,
 };

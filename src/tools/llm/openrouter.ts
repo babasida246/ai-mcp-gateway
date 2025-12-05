@@ -63,6 +63,7 @@ export class OpenRouterClient implements LLMClient {
                 content: request.prompt,
             });
 
+            // Use OpenRouter SDK's chat.send() method
             const response = await client.chat.send({
                 model: model.apiModelName,
                 messages,

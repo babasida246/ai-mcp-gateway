@@ -1,525 +1,355 @@
-# API Gateway - Hướng Dẫn Sử Dụng
+# API Reference
 
-## Tổng Quan
+## Base URL
 
-AI MCP Gateway hiện đã hỗ trợ đầy đủ các tính năng:
-
-- ✅ **Stateless HTTP API** - Nhiều client có thể gọi vào gateway qua HTTP
-- ✅ **Redis Cache Layer** - Cache LLM responses và context để tối ưu chi phí
-- ✅ **PostgreSQL Database** - Lưu trữ dài hạn conversations, messages, logs
-- ✅ **Context Management** - Ghi nhớ conversation qua Redis + Database
-- ✅ **N-layer Dynamic Routing** - Tự động chọn model phù hợp theo chi phí/chất lượng
-- ✅ **Cross-check & Escalation** - Xác minh kết quả và escalate khi cần
-- ✅ **Handoff Builder** - Tối ưu prompt khi chuyển giữa các layers
-
-## Cài Đặt
-
-### 1. Cài đặt Dependencies
-
-```bash
-npm install
+```
+http://localhost:3000
 ```
 
-### 2. Cấu hình Environment Variables
+## Authentication
 
-Tạo file `.env`:
+Most endpoints require no authentication for local development. For production, use JWT tokens via the `/v1/auth/login` endpoint.
 
-```env
-# API Keys
-OPENROUTER_API_KEY=your_key_here
-ANTHROPIC_API_KEY=your_key_here
-OPENAI_API_KEY=your_key_here
+---
 
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_DB=0
+## Health & Status
 
-# PostgreSQL
-DATABASE_URL=postgresql://user:password@localhost:5432/ai_mcp_gateway
-# Hoặc
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=ai_mcp_gateway
-DB_USER=postgres
-DB_PASSWORD=your_password
+### GET /health
 
-# API Server
-API_PORT=3000
-API_HOST=0.0.0.0
-API_CORS_ORIGIN=*
+Check gateway health and service status.
 
-# Routing
-DEFAULT_LAYER=L0
-ENABLE_CROSS_CHECK=true
-ENABLE_AUTO_ESCALATE=true
-MAX_ESCALATION_LAYER=L2
-```
-
-### 3. Khởi động Redis
-
-```bash
-# Docker
-docker run -d -p 6379:6379 redis:alpine
-
-# Hoặc cài đặt local
-redis-server
-```
-
-### 4. Khởi động PostgreSQL
-
-```bash
-# Docker
-docker run -d \
-  -e POSTGRES_DB=ai_mcp_gateway \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=your_password \
-  -p 5432:5432 \
-  postgres:15-alpine
-```
-
-### 5. Chạy Database Migration
-
-```bash
-npm run db:migrate
-# Hoặc
-node dist/db/migrate.js
-```
-
-### 6. Build và Start
-
-```bash
-# Build
-npm run build
-
-# Start API server
-npm run start:api
-# Hoặc
-MODE=api node dist/index.js
-```
-
-## API Endpoints
-
-### Health Check
-
-```bash
-GET /health
-```
-
-Response:
+**Response:**
 ```json
 {
   "status": "ok",
   "redis": true,
   "database": true,
-  "timestamp": "2024-01-01T00:00:00.000Z"
-}
-```
-
-### POST /v1/route - Intelligent Routing
-
-Gửi request và để gateway tự động chọn model phù hợp.
-
-```bash
-curl -X POST http://localhost:3000/v1/route \
-  -H "Content-Type: application/json" \
-  -d '{
-    "conversationId": "conv-123",
-    "message": "Explain recursion in simple terms",
-    "userId": "user-1",
-    "metadata": {
-      "quality": "normal"
-    }
-  }'
-```
-
-Response:
-```json
-{
-  "result": {
-    "response": "Recursion is when a function calls itself...",
-    "model": "oss-llama-3-8b",
-    "provider": "oss-local"
+  "timestamp": "2025-12-05T06:00:00.000Z",
+  "providers": {
+    "openai": false,
+    "anthropic": false,
+    "openrouter": true,
+    "oss-local": false
   },
-  "routing": {
-    "summary": "Single model: oss-llama-3-8b (layer L0)",
-    "fromCache": false
+  "healthyProviders": ["openrouter"],
+  "layers": {
+    "L0": { "enabled": true, "models": [...] },
+    "L1": { "enabled": false, "models": [...] },
+    "L2": { "enabled": false, "models": [...] },
+    "L3": { "enabled": false, "models": [...] }
   },
-  "context": {
-    "conversationId": "conv-123"
-  },
-  "performance": {
-    "durationMs": 1234,
-    "tokens": {
-      "input": 50,
-      "output": 200
-    },
-    "cost": 0.0001
+  "configuration": {
+    "logLevel": "info",
+    "defaultLayer": "L0",
+    "enableCrossCheck": true,
+    "enableAutoEscalate": false,
+    "maxEscalationLayer": "L0",
+    "enableCostTracking": true,
+    "costAlertThreshold": 1
   }
 }
 ```
 
-### POST /v1/code-agent - Code Agent
+---
 
-Sử dụng code agent với quality cao.
+## Chat Completion
 
-```bash
-curl -X POST http://localhost:3000/v1/code-agent \
-  -H "Content-Type: application/json" \
-  -d '{
-    "conversationId": "conv-456",
-    "task": "Write a TypeScript function to validate email addresses",
-    "userId": "user-1",
-    "projectId": "my-project"
-  }'
-```
+### POST /v1/chat/completions
 
-### POST /v1/chat - General Chat
+OpenAI-compatible chat completion endpoint.
 
-Chat đơn giản với context.
-
-```bash
-curl -X POST http://localhost:3000/v1/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "conversationId": "conv-789",
-    "message": "Hello, how are you?",
-    "userId": "user-1"
-  }'
-```
-
-### GET /v1/context/:conversationId - Get Context
-
-Lấy context của một conversation.
-
-```bash
-curl http://localhost:3000/v1/context/conv-123
-```
-
-Response:
+**Request:**
 ```json
 {
-  "conversationId": "conv-123",
-  "summary": {
-    "conversationId": "conv-123",
-    "stack": ["TypeScript", "Node.js"],
-    "architecture": "MCP Gateway",
-    "lastUpdated": "2024-01-01T00:00:00.000Z"
-  },
-  "recentMessages": [
+  "messages": [
+    { "role": "system", "content": "You are a helpful assistant." },
+    { "role": "user", "content": "Hello!" }
+  ],
+  "model": "auto",
+  "temperature": 0.7,
+  "max_tokens": 1000
+}
+```
+
+**Response:**
+```json
+{
+  "id": "chatcmpl-xxx",
+  "object": "chat.completion",
+  "created": 1733385600,
+  "model": "qwen/qwen3-235b-a22b:free",
+  "choices": [
     {
-      "role": "user",
-      "content": "Explain recursion",
-      "timestamp": "2024-01-01T00:00:00.000Z"
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello! How can I help you today?"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 20,
+    "completion_tokens": 10,
+    "total_tokens": 30
+  }
+}
+```
+
+---
+
+## Models
+
+### GET /v1/models
+
+List all available models.
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "id": "openrouter-qwen-qwen3-235b-a22b:free",
+      "provider": "openrouter",
+      "apiModelName": "qwen/qwen3-235b-a22b:free",
+      "layer": "L0",
+      "enabled": true,
+      "priority": 0
     }
   ]
 }
 ```
 
-### POST /v1/context/:conversationId - Update Context
+### GET /v1/models/layers
 
-Cập nhật context summary.
+List models grouped by layer.
 
-```bash
-curl -X POST http://localhost:3000/v1/context/conv-123 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "summary": {
-      "stack": ["TypeScript", "React"],
-      "architecture": "Microservices"
-    }
-  }'
-```
-
-### POST /v1/cache/clear - Clear Cache
-
-Xóa cache.
-
-```bash
-# Clear specific conversation
-curl -X POST http://localhost:3000/v1/cache/clear \
-  -H "Content-Type: application/json" \
-  -d '{
-    "conversationId": "conv-123"
-  }'
-
-# Clear by pattern
-curl -X POST http://localhost:3000/v1/cache/clear \
-  -H "Content-Type: application/json" \
-  -d '{
-    "pattern": "llm:cache:*"
-  }'
-```
-
-### GET /v1/stats - Global Statistics
-
-Lấy thống kê toàn cục.
-
-```bash
-# Basic stats
-curl "http://localhost:3000/v1/stats"
-
-# Stats by model
-curl "http://localhost:3000/v1/stats?groupBy=model"
-
-# Stats by layer
-curl "http://localhost:3000/v1/stats?groupBy=layer"
-
-# Filter by date
-curl "http://localhost:3000/v1/stats?startDate=2024-01-01&endDate=2024-01-31"
-```
-
-Response:
+**Response:**
 ```json
 {
-  "totalCalls": 100,
-  "totalCost": 0.52,
-  "totalTokens": {
-    "input": 5000,
-    "output": 10000
-  },
-  "cacheHitRate": 0.25,
-  "byModel": {
-    "oss-llama-3-8b": {
-      "calls": 60,
-      "cost": 0.0,
-      "tokens": {
-        "input": 3000,
-        "output": 6000
-      }
+  "layers": {
+    "L0": {
+      "enabled": true,
+      "models": [
+        {
+          "id": "openrouter-qwen-qwen3-235b-a22b:free",
+          "provider": "openrouter",
+          "apiModelName": "qwen/qwen3-235b-a22b:free",
+          "enabled": true,
+          "priority": 0
+        },
+        {
+          "id": "openrouter-llama-3.3-70b-free",
+          "provider": "openrouter",
+          "apiModelName": "meta-llama/llama-3.3-70b-instruct:free",
+          "enabled": true,
+          "priority": 1
+        }
+      ],
+      "providers": ["openrouter"]
     },
-    "claude-sonnet-4": {
-      "calls": 40,
-      "cost": 0.52,
-      "tokens": {
-        "input": 2000,
-        "output": 4000
-      }
-    }
+    "L1": { ... },
+    "L2": { ... },
+    "L3": { ... }
   }
 }
 ```
 
-### GET /v1/stats/conversation/:conversationId - Conversation Stats
+### POST /v1/models
 
-Thống kê cho một conversation cụ thể.
+Add a new model configuration.
 
-```bash
-curl http://localhost:3000/v1/stats/conversation/conv-123
-```
-
-Response:
+**Request:**
 ```json
 {
-  "conversationId": "conv-123",
-  "messageCount": 10,
-  "llmCalls": 5,
-  "totalCost": 0.05,
-  "totalTokens": {
-    "input": 500,
-    "output": 1000
-  },
-  "createdAt": "2024-01-01T00:00:00.000Z",
-  "updatedAt": "2024-01-01T12:00:00.000Z"
+  "id": "my-custom-model",
+  "provider": "openrouter",
+  "apiModelName": "openai/gpt-4",
+  "layer": "L2",
+  "enabled": true,
+  "priority": 0,
+  "relativeCost": 1.0
 }
 ```
 
-## Workflow Ví Dụ
+### PUT /v1/models/:id
 
-### 1. CLI Client
+Update a model configuration.
 
-```bash
-# Tạo conversation mới
-CONV_ID="cli-$(uuidgen)"
-
-# Gửi request
-curl -X POST http://localhost:3000/v1/route \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"conversationId\": \"$CONV_ID\",
-    \"message\": \"Create a simple web server in Node.js\",
-    \"mode\": \"cli\",
-    \"metadata\": {
-      \"client\": \"cli\",
-      \"quality\": \"high\"
-    }
-  }"
-
-# Tiếp tục conversation
-curl -X POST http://localhost:3000/v1/route \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"conversationId\": \"$CONV_ID\",
-    \"message\": \"Add error handling to it\"
-  }"
-```
-
-### 2. Telegram Bot Integration
-
-```javascript
-// bot.js
-const GATEWAY_URL = 'http://localhost:3000';
-
-bot.on('message', async (msg) => {
-  const chatId = msg.chat.id;
-  const conversationId = `tg:${chatId}`;
-
-  const response = await fetch(`${GATEWAY_URL}/v1/route`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      conversationId,
-      message: msg.text,
-      mode: 'telegram',
-      metadata: {
-        client: 'telegram',
-        telegramChatId: chatId,
-      },
-    }),
-  });
-
-  const data = await response.json();
-  bot.sendMessage(chatId, data.result.response);
-});
-```
-
-### 3. Web UI Integration
-
-```javascript
-// frontend.js
-async function sendMessage(message) {
-  const conversationId = localStorage.getItem('conversationId') 
-    || `web-${Date.now()}`;
-  
-  const response = await fetch('http://localhost:3000/v1/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      conversationId,
-      message,
-      mode: 'web',
-      userId: getCurrentUserId(),
-    }),
-  });
-
-  const data = await response.json();
-  localStorage.setItem('conversationId', conversationId);
-  
-  return data.result.response;
+**Request:**
+```json
+{
+  "enabled": false,
+  "priority": 5
 }
 ```
 
-## N-Layer Routing
+### DELETE /v1/models/:id
 
-Gateway tự động chọn layer phù hợp:
+Delete a model configuration.
 
-- **L0** (Free/OSS): Llama 3, Mistral, Qwen - Chi phí thấp nhất
-- **L1** (Mid-tier): GPT-4o-mini, Claude Haiku - Cân bằng chi phí/chất lượng
-- **L2** (Premium): Claude Sonnet 4, GPT-4o - Chất lượng cao nhất
+---
 
-### Cross-check
+## Terminal
 
-Khi `ENABLE_CROSS_CHECK=true`:
-- Gọi 2 model trong cùng layer
-- Model A tạo solution
-- Model B review solution
-- Nếu có conflict → gọi model C làm arbitrator
+### POST /v1/terminal/sessions
 
-### Auto-escalation
+Create a new terminal session.
 
-Khi `ENABLE_AUTO_ESCALATE=true`:
-- Nếu cross-check phát hiện conflicts
-- Tự động escalate lên layer cao hơn
-- Tối đa đến `MAX_ESCALATION_LAYER`
-
-## Scripts Hữu Ích
-
-Thêm vào `package.json`:
-
+**Request:**
 ```json
 {
-  "scripts": {
-    "db:migrate": "node dist/db/migrate.js",
-    "start:api": "MODE=api node dist/index.js",
-    "start:mcp": "node dist/index.js",
-    "dev:api": "MODE=api npm run dev",
-    "stats": "curl http://localhost:3000/v1/stats | jq"
+  "type": "local"
+}
+```
+
+Or for SSH:
+```json
+{
+  "type": "ssh",
+  "host": "192.168.1.100",
+  "port": 22,
+  "username": "admin",
+  "password": "secret"
+}
+```
+
+**Response:**
+```json
+{
+  "session": {
+    "id": "term-1733385600000-abc123",
+    "type": "local",
+    "createdAt": "2025-12-05T06:00:00.000Z",
+    "connected": true
   }
 }
 ```
 
-## Monitoring
+### GET /v1/terminal/sessions
 
-### View logs
+List all terminal sessions.
 
-```bash
-tail -f logs/ai-mcp-gateway.log
+**Response:**
+```json
+{
+  "sessions": [
+    {
+      "id": "term-1733385600000-abc123",
+      "type": "local",
+      "createdAt": "2025-12-05T06:00:00.000Z",
+      "connected": true
+    }
+  ]
+}
 ```
 
-### Check Redis
+### POST /v1/terminal/:id/execute
 
-```bash
-redis-cli
-> KEYS *
-> GET conv:summary:conv-123
+Execute a command in a local terminal session.
+
+**Request:**
+```json
+{
+  "command": "ls -la"
+}
 ```
 
-### Check Database
-
-```bash
-psql -U postgres -d ai_mcp_gateway
-
-SELECT * FROM conversations ORDER BY created_at DESC LIMIT 10;
-SELECT model_id, COUNT(*), SUM(estimated_cost) FROM llm_calls GROUP BY model_id;
+**Response:**
+```json
+{
+  "result": {
+    "stdout": "total 64\ndrwxr-xr-x  10 user  staff   320 Dec  5 06:00 .\n...",
+    "stderr": "",
+    "exitCode": 0
+  }
+}
 ```
 
-## Troubleshooting
+### POST /v1/terminal/:id/send
 
-### Redis không connect
+Send data to SSH/Telnet session.
 
-```bash
-# Kiểm tra Redis đang chạy
-redis-cli ping
-# Hoặc
-docker ps | grep redis
+**Request:**
+```json
+{
+  "data": "ls -la\n"
+}
 ```
 
-### Database migration lỗi
+### GET /v1/terminal/:id/output
 
-```bash
-# Drop và recreate database
-psql -U postgres
-DROP DATABASE ai_mcp_gateway;
-CREATE DATABASE ai_mcp_gateway;
-\q
+Get output from SSH/Telnet session (polling).
 
-# Run migration lại
-npm run db:migrate
+**Response:**
+```json
+{
+  "output": ["total 64\n", "drwxr-xr-x  10 user  staff   320 Dec  5 06:00 .\n"]
+}
 ```
 
-### API không start
+### DELETE /v1/terminal/:id
 
-```bash
-# Kiểm tra port đã được sử dụng
-netstat -ano | findstr :3000
+Close and delete a terminal session.
 
-# Thay đổi port trong .env
-API_PORT=3001
+---
+
+## Authentication
+
+### POST /v1/auth/login
+
+Login to admin dashboard.
+
+**Request:**
+```json
+{
+  "username": "admin",
+  "password": "admin123"
+}
 ```
 
-## Performance Tips
+**Response:**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "admin",
+    "username": "admin",
+    "role": "admin"
+  }
+}
+```
 
-1. **Enable caching**: Đặt `REDIS_HOST` đúng để cache hoạt động
-2. **Start with L0**: Dùng `DEFAULT_LAYER=L0` để tiết kiệm chi phí
-3. **Use cross-check selectively**: Chỉ bật cho tasks quan trọng
-4. **Monitor costs**: Thường xuyên check `/v1/stats` để theo dõi chi phí
+---
 
-## Tích Hợp Client
+## Error Responses
 
-Xem thêm ví dụ client tại:
-- `examples/cli-client/` - CLI client
-- `examples/telegram-bot/` - Telegram bot
-- `examples/web-ui/` - Web interface
+All errors follow this format:
 
-(Sẽ được tạo trong tương lai)
+```json
+{
+  "error": "Error message here",
+  "details": "Additional details if available"
+}
+```
+
+Common HTTP status codes:
+- `400`: Bad Request - Invalid parameters
+- `401`: Unauthorized - Authentication required
+- `404`: Not Found - Resource doesn't exist
+- `500`: Internal Server Error - Server-side error
+
+---
+
+## Rate Limiting
+
+Default rate limits (configurable):
+- 100 requests per minute per IP
+- 1000 requests per hour per API key
+
+Rate limit headers:
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1733385660
+```
