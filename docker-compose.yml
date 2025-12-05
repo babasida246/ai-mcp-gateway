@@ -6,6 +6,8 @@ services:
       dockerfile: Dockerfile
     container_name: ai-mcp-gateway
     restart: unless-stopped
+    env_file:
+      - .env.docker
     ports:
       - "3000:3000"
     environment:

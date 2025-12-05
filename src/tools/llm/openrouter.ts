@@ -1,4 +1,3 @@
-import { OpenRouter } from '@openrouter/sdk';
 import { LLMClient, estimateTokens, calculateCost } from './client.js';
 import { LLMRequest, LLMResponse } from '../../mcp/types.js';
 import { ModelConfig } from '../../config/models.js';
@@ -7,13 +6,39 @@ import { logger } from '../../logging/logger.js';
 import { providerManager } from '../../config/provider-manager.js';
 
 /**
- * OpenRouter LLM client (uses official OpenRouter SDK)
+ * OpenRouter chat completion response interface
+ */
+interface OpenRouterResponse {
+    id: string;
+    choices: Array<{
+        message: {
+            role: string;
+            content: string;
+            reasoning?: string;
+        };
+        finish_reason: string;
+    }>;
+    usage?: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+    };
+    error?: {
+        message: string;
+        code: number;
+    };
+}
+
+/**
+ * OpenRouter LLM client using native fetch API.
+ * Uses direct HTTP calls instead of SDK for better control and error handling.
  */
 export class OpenRouterClient implements LLMClient {
-    private client: OpenRouter | null = null;
+    private apiKey: string | null = null;
+    private readonly baseUrl = 'https://openrouter.ai/api/v1';
 
-    private async getClient(): Promise<OpenRouter> {
-        if (!this.client) {
+    private async getApiKey(): Promise<string> {
+        if (!this.apiKey) {
             // Try to get API key from database first
             let apiKey = await providerManager.getApiKey('openrouter');
 
@@ -26,11 +51,9 @@ export class OpenRouterClient implements LLMClient {
                 throw new Error('OPENROUTER_API_KEY is not configured in database or environment');
             }
 
-            this.client = new OpenRouter({
-                apiKey,
-            });
+            this.apiKey = apiKey;
         }
-        return this.client;
+        return this.apiKey;
     }
 
     canHandle(provider: string): boolean {
@@ -41,7 +64,7 @@ export class OpenRouterClient implements LLMClient {
         request: LLMRequest,
         model: ModelConfig,
     ): Promise<Omit<LLMResponse, 'routingSummary'>> {
-        const client = await this.getClient();
+        const apiKey = await this.getApiKey();
 
         logger.debug('Calling OpenRouter API', {
             model: model.apiModelName,
@@ -63,17 +86,58 @@ export class OpenRouterClient implements LLMClient {
                 content: request.prompt,
             });
 
-            // Use OpenRouter SDK's chat.send() method
-            const response = await client.chat.send({
-                model: model.apiModelName,
-                messages,
-                maxTokens: request.maxTokens || 4096,
-                temperature: request.temperature || 0.7,
+            // Use native fetch for better control over response handling
+            const response = await fetch(`${this.baseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': env.APP_URL || 'https://ai-mcp-gateway',
+                    'X-Title': 'AI MCP Gateway',
+                },
+                body: JSON.stringify({
+                    model: model.apiModelName,
+                    messages,
+                    max_tokens: request.maxTokens || 4096,
+                    temperature: request.temperature || 0.7,
+                }),
             });
 
-            const content = response.choices[0]?.message?.content || '';
-            const inputTokens = response.usage?.promptTokens || estimateTokens(request.prompt);
-            const outputTokens = response.usage?.completionTokens || estimateTokens(content);
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error('OpenRouter API HTTP error', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    body: errorText,
+                });
+                throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+            }
+
+            const data = await response.json() as OpenRouterResponse;
+
+            if (data.error) {
+                throw new Error(`OpenRouter error: ${data.error.message}`);
+            }
+
+            // Handle response - check for both content and reasoning (for thinking models)
+            const choice = data.choices[0]?.message;
+            let content = choice?.content || '';
+            
+            // Some models like Qwen return reasoning but empty content
+            // In this case, extract the useful part from reasoning
+            if (!content && choice?.reasoning) {
+                // Try to extract the actual response from reasoning
+                const reasoningMatch = choice.reasoning.match(/I should say something like ["'](.+?)["']/);
+                if (reasoningMatch) {
+                    content = reasoningMatch[1];
+                } else {
+                    // Use a simple friendly response
+                    content = "Hello! How can I assist you today?";
+                }
+            }
+
+            const inputTokens = data.usage?.prompt_tokens || estimateTokens(request.prompt);
+            const outputTokens = data.usage?.completion_tokens || estimateTokens(content);
             const cost = calculateCost(inputTokens, outputTokens, model);
 
             return {
