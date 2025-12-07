@@ -9,7 +9,7 @@ config();
  */
 const envSchema = z.object({
     // MCP Server
-    MCP_SERVER_NAME: z.string().default('ai-mcp-gateway'),
+    MCP_SERVER_NAME: z.string().default('mcp-gateway'),
     MCP_SERVER_VERSION: z.string().default('0.1.0'),
 
     // API Keys
@@ -56,7 +56,7 @@ const envSchema = z.object({
 
     // Logging
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
-    LOG_FILE: z.string().default('logs/ai-mcp-gateway.log'),
+    LOG_FILE: z.string().default('logs/mcp-gateway.log'),
 
     // Routing
     DEFAULT_LAYER: z.string().default('L0'),
@@ -116,6 +116,11 @@ const envSchema = z.object({
     ADMIN_DEFAULT_PASSWORD: z.string().default('admin123'),
     // Terminal encryption key (32 bytes for AES-256)
     TERMINAL_ENCRYPTION_KEY: z.string().default('terminal-encryption-key-32bytes!'),
+
+    // Embedding Service Configuration
+    EMBEDDING_PROVIDER: z.enum(['openai', 'openrouter', 'ollama', 'local']).default('openai'),
+    EMBEDDING_MODEL_ID: z.string().default('text-embedding-3-small'),
+    OLLAMA_HOST: z.string().default('http://localhost:11434'),
 });
 
 export type Env = z.infer<typeof envSchema>;

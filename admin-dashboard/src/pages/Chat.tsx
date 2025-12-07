@@ -19,6 +19,13 @@ interface Message {
     output: number;
   };
   latency?: number;
+  contextOptimization?: {
+    strategy?: string;
+    tokens_saved?: number;
+    summary_included?: boolean;
+    spans_retrieved?: number;
+    recent_messages_included?: number;
+  } | null;
 }
 
 interface Conversation {
@@ -108,6 +115,9 @@ export default function Chat() {
   const [systemPrompt, setSystemPrompt] = useState('You are a helpful AI assistant.');
   const [temperature, setTemperature] = useState(0.7);
   const [maxTokens, setMaxTokens] = useState(4096);
+  // Context optimization settings
+  const [contextStrategy, setContextStrategy] = useState<'full' | 'last-n' | 'summary+recent' | 'span-retrieval'>('summary+recent');
+  const [maxContextTokens, setMaxContextTokens] = useState<number | undefined>(undefined);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -303,6 +313,11 @@ export default function Chat() {
         ],
         temperature,
         max_tokens: maxTokens,
+        // include conversation id for server-side context management
+        conversation_id: currentConvId,
+        // include context optimization options
+        context_strategy: contextStrategy,
+        ...(maxContextTokens ? { max_context_tokens: maxContextTokens } : {}),
       };
 
       // Add layer/model selection if not auto
@@ -330,6 +345,7 @@ export default function Chat() {
           output: response.data.usage.completion_tokens || 0,
         } : undefined,
         latency,
+        contextOptimization: response.data.context_optimization || null,
       };
 
       // Add assistant message to conversation
@@ -617,6 +633,36 @@ export default function Chat() {
                   className="w-full"
                 />
               </div>
+
+              {/* Context Strategy */}
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Context Strategy</label>
+                <select
+                  value={contextStrategy}
+                  onChange={(e) => setContextStrategy(e.target.value as any)}
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white"
+                >
+                  <option value="summary+recent">Summary + Recent (default)</option>
+                  <option value="span-retrieval">Span Retrieval (semantic)</option>
+                  <option value="last-n">Last N messages</option>
+                  <option value="full">Full (no optimization)</option>
+                </select>
+              </div>
+
+              {/* Max Context Tokens */}
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Max Context Tokens</label>
+                <input
+                  type="number"
+                  min={256}
+                  max={200000}
+                  step={256}
+                  placeholder="Auto"
+                  value={maxContextTokens ?? ''}
+                  onChange={(e) => setMaxContextTokens(e.target.value ? parseInt(e.target.value) : undefined)}
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white"
+                />
+              </div>
             </div>
 
             {/* System Prompt */}
@@ -677,6 +723,9 @@ export default function Chat() {
                     {message.latency && <span>• {formatLatency(message.latency)}</span>}
                     {message.tokens && (
                       <span>• {message.tokens.input + message.tokens.output} tokens</span>
+                    )}
+                    {message.contextOptimization && (
+                      <span className="ml-2">• Context: {message.contextOptimization.tokens_saved ?? 0} saved • spans: {message.contextOptimization.spans_retrieved ?? 0}</span>
                     )}
                     <button
                       onClick={() => copyToClipboard(message.content, message.id)}

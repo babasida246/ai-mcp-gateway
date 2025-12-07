@@ -18,6 +18,12 @@ import { createDatabaseRoutes } from './database.js';
 import { createProviderRoutes } from './providers.js';
 import { createOpenRouterRoutes } from './openrouter.js';
 import { createAgentRoutes } from './agents.js';
+import { createAdminRoutes } from './admin.js';
+import {
+    buildContextForRequest,
+    queueMessageEmbedding,
+    type ChatContextStrategy
+} from '../services/chat/index.js';
 
 /**
  * HTTP API Server for stateless request handling
@@ -156,9 +162,8 @@ export class APIServer {
         // AI Agent routes
         this.app.use('/v1/agents', createAgentRoutes());
 
-        // TODO: Import and mount admin routes when admin.ts is implemented
-        // const { default: adminRoutes } = await import('./admin.js');
-        // this.app.use('/admin', adminRoutes);
+        // Admin routes for MCP tools settings and backend configurations
+        this.app.use('/v1/admin', createAdminRoutes());
 
         // Health check
         this.app.get('/health', async (_req, res) => {
@@ -863,11 +868,25 @@ export class APIServer {
     /**
      * Handle /v1/chat/completions - OpenAI-compatible chat completions
      * Used by the dashboard chat interface
+     * 
+     * Enhanced with Chat Context Optimization for long conversations
      */
     private async handleChatCompletions(req: Request, res: Response): Promise<void> {
         const startTime = Date.now();
         try {
-            const { messages, model, layer, temperature, max_tokens } = req.body;
+            const {
+                messages,
+                model,
+                layer,
+                temperature,
+                max_tokens,
+                // New context optimization parameters
+                conversation_id,
+                context_strategy,
+                max_context_tokens,
+                project_id,
+                tool_id,
+            } = req.body;
 
             if (!messages || !Array.isArray(messages) || messages.length === 0) {
                 res.status(400).json({
@@ -876,32 +895,66 @@ export class APIServer {
                 return;
             }
 
-            // Build prompt from messages
-            const systemMessages = messages.filter((m: any) => m.role === 'system');
-            const userMessages = messages.filter((m: any) => m.role !== 'system');
-
-            const systemPrompt = systemMessages.length > 0
-                ? systemMessages.map((m: any) => m.content).join('\n')
-                : '';
-
-            const lastUserMessage = userMessages[userMessages.length - 1];
-            if (!lastUserMessage || lastUserMessage.role !== 'user') {
+            const lastUserMessage = messages.filter((m: any) => m.role === 'user').pop();
+            if (!lastUserMessage) {
                 res.status(400).json({
-                    error: 'Last message must be from user',
+                    error: 'At least one user message is required',
                 });
                 return;
             }
 
-            // Build conversation context
-            const conversationHistory = userMessages.slice(0, -1)
-                .map((m: any) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
-                .join('\n');
+            // Build optimized context using ChatContextBuilder
+            let contextResult;
+            let fullPrompt: string;
+            let tokensSaved = 0;
 
-            const fullPrompt = [
-                systemPrompt ? `System: ${systemPrompt}` : '',
-                conversationHistory,
-                `User: ${lastUserMessage.content}`
-            ].filter(Boolean).join('\n\n');
+            try {
+                contextResult = await buildContextForRequest({
+                    conversationId: conversation_id,
+                    messages: messages,
+                    model: model,
+                    layer: layer,
+                    projectId: project_id,
+                    toolId: tool_id,
+                    contextStrategy: context_strategy as ChatContextStrategy,
+                    maxContextTokens: max_context_tokens,
+                });
+
+                fullPrompt = contextResult.prompt;
+                tokensSaved = contextResult.tokenStats.saved;
+
+                logger.info('Chat context optimized', {
+                    conversationId: conversation_id,
+                    strategy: contextResult.strategy,
+                    originalTokens: contextResult.tokenStats.total + tokensSaved,
+                    optimizedTokens: contextResult.tokenStats.total,
+                    tokensSaved,
+                    spansRetrieved: contextResult.metadata.spansRetrieved,
+                    summaryIncluded: contextResult.metadata.summaryIncluded,
+                });
+            } catch (contextError) {
+                // Fallback to legacy prompt building if context optimization fails
+                logger.warn('Context optimization failed, using legacy prompt building', {
+                    error: contextError instanceof Error ? contextError.message : 'Unknown',
+                });
+
+                const systemMessages = messages.filter((m: any) => m.role === 'system');
+                const userMessages = messages.filter((m: any) => m.role !== 'system');
+
+                const systemPrompt = systemMessages.length > 0
+                    ? systemMessages.map((m: any) => m.content).join('\n')
+                    : '';
+
+                const conversationHistory = userMessages.slice(0, -1)
+                    .map((m: any) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+                    .join('\n');
+
+                fullPrompt = [
+                    systemPrompt ? `System: ${systemPrompt}` : '',
+                    conversationHistory,
+                    `User: ${lastUserMessage.content}`
+                ].filter(Boolean).join('\n\n');
+            }
 
             // Determine routing options
             const routingOptions: any = {
@@ -932,7 +985,15 @@ export class APIServer {
 
             const latency = Date.now() - startTime;
 
-            // Return OpenAI-compatible response
+            // Queue embedding generation for the new messages (non-blocking)
+            if (conversation_id) {
+                queueMessageEmbedding(conversation_id, lastUserMessage.content);
+                if (result.content) {
+                    queueMessageEmbedding(conversation_id, result.content);
+                }
+            }
+
+            // Return OpenAI-compatible response with context optimization stats
             res.json({
                 id: `chatcmpl-${Date.now()}`,
                 object: 'chat.completion',
@@ -948,6 +1009,14 @@ export class APIServer {
                 },
                 cost: result.cost,
                 latency,
+                // Context optimization metadata
+                context_optimization: contextResult ? {
+                    strategy: contextResult.strategy,
+                    tokens_saved: tokensSaved,
+                    summary_included: contextResult.metadata.summaryIncluded,
+                    spans_retrieved: contextResult.metadata.spansRetrieved,
+                    recent_messages_included: contextResult.metadata.recentMessagesIncluded,
+                } : null,
                 choices: [{
                     index: 0,
                     message: {
