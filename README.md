@@ -1,96 +1,60 @@
 # AI MCP Gateway
 
-**Intelligent Multi-Model Orchestrator with Cost Optimization & Admin Dashboard**
-
-A production-ready Model Context Protocol (MCP) server and HTTP API Gateway that orchestrates multiple AI models with intelligent N-layer routing, budget tracking, priority-based model selection, and a comprehensive admin dashboard.
+Model Context Protocol (MCP) server and AI gateway that orchestrates multiple models with layered routing, budget controls, and an admin dashboard.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-19-blue)](https://react.dev/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-blue)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
----
+This repository provides:
 
-## ✨ Features
+- An HTTP API gateway (Express) that routes requests to LLM providers using an N-layer, priority-based router.
+- A standalone MCP server implementation so MCP-aware clients (Claude Desktop, VS Code) can connect directly.
+- A developer CLI (`mcp`) for code generation, analysis, and gateway management.
+- A React-based Admin Dashboard for real-time monitoring and provider/model management.
 
-### 🎯 Intelligent Model Routing
-- **N-Layer Architecture**: Route requests to L0 (free) → L3 (premium) based on task complexity
-- **Priority-Based Selection**: Models sorted by priority within each layer
-- **Task-Specific Routing**: Different models for chat, code, analysis tasks
-- **Automatic Fallback**: Seamless failover when providers are unavailable
-
-### 💰 Cost Optimization
-- **Free-First Strategy**: Prioritize free models (L0), escalate only when necessary
-- **Budget Tracking**: Per-project budgets with automatic enforcement
-- **Real-time Monitoring**: Live cost tracking via dashboard and API
-- **Layer Limits**: Configure maximum escalation tier per project
-
-### 📊 Admin Dashboard
-- **Real-time Metrics**: Requests, costs, tokens, latency monitoring
-- **Model Management**: Configure models, layers, priorities via UI
-- **Provider Management**: Enable/disable providers, manage API keys
-- **Web Terminal**: SSH/Telnet/Local shell with smart autocomplete
-- **Alert System**: Custom alerts with multi-channel notifications
-
-### 🖥️ CLI Tool
-- **Gateway Management**: Check status, list models, view config
-- **Quick Actions**: Pre-built commands accessible from Web Terminal
-- **Tab Completion**: Smart autocomplete for CLI commands
-- **History Navigation**: Up/Down arrows to browse command history
-
-### 🔧 Developer Features
-- **HTTP API**: RESTful endpoints for any client
-- **MCP Support**: Native support for Claude Desktop, VS Code
-- **Docker Ready**: Full containerization with docker-compose
-- **Test Integration**: Vitest unit tests + Playwright E2E
+See `docs/FEATURE_SUMMARY.md` for a concise feature overview.
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-### Docker (Recommended)
+Docker (recommended):
 
-```bash
-# Clone repository
+```powershell
 git clone https://github.com/babasida246/ai-mcp-gateway.git
 cd ai-mcp-gateway
-
-# Setup environment
-cp .env.docker.example .env.docker
-# Edit .env.docker - add your OPENROUTER_API_KEY
-
-# Start all services
+copy .env.docker.example .env.docker
+# Edit .env.docker with provider API keys (OPENROUTER_API_KEY, OPENAI_API_KEY, ...)
 docker-compose --env-file .env.docker up -d
 
-# Access services
 # Gateway API:     http://localhost:3000
 # Admin Dashboard: http://localhost:5173
-# Health Check:    http://localhost:3000/health
 ```
 
-### Local Development
+Local development:
 
-```bash
-# Install dependencies
+```powershell
 npm install
-
-# Setup environment
-cp .env.example .env
-# Edit .env - add your API keys
-
-# Build project
+copy .env.example .env
+# Edit .env with API keys and DB settings
 npm run build
-
-# Start in API mode
-npm run start:api
-
-# Or start in MCP mode (for Claude Desktop)
-npm run start:mcp
+npm run start:api     # start API server
+# or
+npm run start:mcp     # start MCP server
 ```
 
 ---
 
+## Core Concepts
+
+- N-layer routing: requests try cheaper/free models first (L0 → L3) and escalate only when necessary.
+- Priority selection: models within a layer are ordered by priority and chosen deterministically.
+- Budget enforcement: per-project budgets limit model escalation and track costs.
+- MCP tools: the gateway exposes MCP tools for chat, code, network ops, and more.
+
+For a short feature summary, open `docs/FEATURE_SUMMARY.md`.
 ## 📖 CLI Usage
 
 The gateway includes a powerful CLI tool:
@@ -117,6 +81,105 @@ ai-mcp-gateway db status
 # View/modify configuration
 ai-mcp-gateway config show
 ai-mcp-gateway config set <key> <value>
+```
+
+---
+
+## 🔗 MCP Server Mode
+
+The gateway can run as a standalone MCP server that Claude Desktop, VS Code, and other MCP clients can connect to directly.
+
+### Starting the MCP Server
+
+```bash
+# Start with default stdio transport
+mcp mcp-serve
+
+# Start with debug logging
+mcp mcp-serve --log-level debug
+
+# With custom gateway endpoint (for AI routing)
+mcp mcp-serve --endpoint http://localhost:3000 --api-key your-key
+```
+
+### Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `ai.chat_router` | Route chat messages through N-layer architecture (L0→L3) for cost optimization |
+| `ai.code_agent` | Generate or analyze code with full context awareness |
+| `net.fw_log_search` | Search and analyze firewall logs |
+| `net.topology_scan` | Scan and visualize network topology |
+| `net.mikrotik_api` | Execute MikroTik RouterOS API commands |
+| `ops.cost_report` | Generate cost reports for AI usage |
+| `ops.trace_session` | Trace and debug AI request sessions |
+
+### Claude Desktop Configuration
+
+Add to `claude_desktop_config.json`:
+
+**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`  
+**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "ai-mcp-gateway": {
+      "command": "npx",
+      "args": ["-y", "@ai-mcp-gateway/cli", "mcp-serve"],
+      "env": {
+        "MCP_ENDPOINT": "http://localhost:3000",
+        "MCP_LOG_LEVEL": "info"
+      }
+    }
+  }
+}
+```
+
+Or if installed globally:
+
+```json
+{
+  "mcpServers": {
+    "ai-mcp-gateway": {
+      "command": "mcp",
+      "args": ["mcp-serve"]
+    }
+  }
+}
+```
+
+### VS Code MCP Configuration
+
+Add to your VS Code `settings.json`:
+
+```json
+{
+  "mcp.servers": {
+    "ai-mcp-gateway": {
+      "command": "npx",
+      "args": ["-y", "@ai-mcp-gateway/cli", "mcp-serve"]
+    }
+  }
+}
+```
+
+### Tool Usage Examples
+
+Once connected, you can use the tools in Claude:
+
+```
+# Route a chat message through the gateway
+Use ai.chat_router to ask: "Explain the difference between REST and GraphQL"
+
+# Analyze code
+Use ai.code_agent to review my index.ts file and suggest improvements
+
+# Search firewall logs
+Use net.fw_log_search to find blocked connections in the last hour
+
+# Get cost report
+Use ops.cost_report to show my AI usage costs for this month
 ```
 
 ---

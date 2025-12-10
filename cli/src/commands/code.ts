@@ -28,217 +28,256 @@ import {
     createMissingProjectFiles
 } from '../utils/projectContext.js';
 
-interface CodeContext {
-    relatedFiles: string[];
-    imports: string[];
-    dependencies: string[];
-    gitContext: string;
-    projectType: string;
+import { findCandidateFiles as _findCandidateFiles, slugifyForFilename as _slugifyForFilename, chooseOutputForCreate } from '../utils/fileSelector.js';
+import { detectLanguageFromPrompt, langToExt } from '../utils/detectLanguageFromPrompt.js';
+import { safeWriteFile } from '../utils/fileOps.js';
+import { confirmPrompt } from '../utils/promptConfirm.js';
+
+displayContextSummary(projectContext);
+
+let fileContent: string;
+let fileName: string;
+let language: string;
+let codeContext: CodeContext | undefined;
+let actualFilePath: string = filePath;
+
+// Try to extract file name from prompt if it looks like a file operation
+const extractFileFromPrompt = (prompt: string): string | null => {
+    // Look for patterns like "add to file.js", "modify app.test.ts", "update src/index.ts"
+    const filePatterns = [
+        /\b(add|modify|update|change|edit|fix)\s+(?:to|in)\s+([^\s]+\.[a-zA-Z0-9]+)\b/i,
+        /\b([^\s]+\.[a-zA-Z0-9]+)\s+(?:to|add|modify|update|change|edit|fix)\b/i,
+        /\b(create|generate)\s+(?:new\s+)?([^\s]+\.[a-zA-Z0-9]+)\b/i,
+        /\b(add|modify|update|change|edit|fix)\s+(?:to|in)\s+([^\s\/]+\.[a-zA-Z0-9]+)\b/i,
+        /\b([^\s\/]+\.[a-zA-Z0-9]+)\b.*\b(add|modify|update|change|edit|fix|create|generate)\b/i
+    ];
+
+    for (const pattern of filePatterns) {
+        const match = prompt.match(pattern);
+        if (match) {
+            const fileName = match[2] || match[1];
+            // Try different path variations
+            const possiblePaths = [
+                fileName,
+                `./${fileName}`,
+                `tests/${fileName}`,
+                `src/${fileName}`,
+                `lib/${fileName}`,
+                `components/${fileName}`,
+                `routes/${fileName}`
+            ];
+
+            for (const path of possiblePaths) {
+                if (existsSync(path)) {
+                    return path;
+                }
+            }
+        }
+    }
+    return null;
+};
+
+// File selection logic delegated to `cli/src/utils/fileSelector.ts`
+
+const extractedFile = extractFileFromPrompt(filePath);
+if (extractedFile && !options.create) {
+    // File exists and we have a prompt that mentions it - treat as modify operation
+    actualFilePath = extractedFile;
+    options.prompt = filePath; // The full prompt
+    console.log(chalk.dim(`📝 Detected file operation on: ${actualFilePath}`));
 }
 
-export async function codeCommand(
-    filePath: string,
-    options: {
-        prompt?: string;
-        endpoint?: string;
-        apiKey?: string;
-        stdin?: boolean;
-        context?: boolean; // Enable deep context analysis
-        related?: boolean; // Include related files
-        create?: boolean; // Create new code
-        output?: string; // Output file for generated code
-        useClaudeCode?: boolean; // NEW: Enable Claude Code mode
-    }
-): Promise<void> {
-    const client = new MCPClient(options.endpoint, options.apiKey);
-
-    // Read project context files
-    console.log(chalk.dim('🔍 Reading project context...'));
-    const projectContext = readProjectContext();
-
-    // Check if we need to auto-generate project context files
-    if (!hasMinimalProjectContext(projectContext)) {
-        console.log(chalk.yellow('📝 Project context files missing. Generating project summary first...'));
-
-        try {
-            // Import and run summarize functionality
-            const { summarizeProject } = await import('./summarize.js');
-
-            // Generate summary with free budget
-            await summarizeProject({
-                output: 'temp-project-summary.md',
-                budget: 0, // Free tier for initial analysis
-                verbose: true
-            });
-
-            // Read the generated summary
-            const summaryPath = 'temp-project-summary.md';
-            if (existsSync(summaryPath)) {
-                const summaryContent = readFileSync(summaryPath, 'utf-8');
-
-                // Create missing project files based on summary
-                await createMissingProjectFiles(process.cwd(), summaryContent, true);
-
-                // Clean up temporary file
-                try {
-                    require('fs').unlinkSync(summaryPath);
-                } catch { }
-
-                // Re-read project context with newly created files
-                console.log(chalk.green('✅ Project context files created. Re-reading context...'));
-                const updatedContext = readProjectContext();
-                Object.assign(projectContext, updatedContext);
-            }
-        } catch (error) {
-            console.log(chalk.yellow('⚠️  Could not auto-generate project context. Continuing without...'));
-        }
-    }
-
-    displayContextSummary(projectContext);
-
-    let fileContent: string;
-    let fileName: string;
-    let language: string;
-    let codeContext: CodeContext | undefined;
-
-    if (options.create || (!existsSync(filePath) && !options.stdin && filePath !== '-')) {
-        // Create new code mode (auto-detect if file doesn't exist)
-        options.create = true;
-        fileContent = '';
-        fileName = options.output || 'generated';
-        language = options.output ? detectLanguage(options.output) : 'typescript'; // default
-        codeContext = undefined;
-        // filePath is the prompt
+if (options.create || (!existsSync(actualFilePath) && !options.stdin && actualFilePath !== '-')) {
+    // Create new code mode (auto-detect if file doesn't exist)
+    options.create = true;
+    fileContent = '';
+    fileName = options.output || 'generated';
+    language = options.output ? detectLanguage(options.output) : 'typescript'; // default
+    codeContext = undefined;
+    // filePath is the prompt
+    if (!options.prompt) {
         options.prompt = filePath;
-    } else if (options.stdin || filePath === '-') {
-        // Read from stdin
-        console.log(chalk.dim('📖 Reading from stdin...'));
-        fileContent = await readStdin();
-        fileName = 'stdin';
-        language = 'text';
-    } else {
-        // Read from file
-        try {
-            fileContent = readFileSync(filePath, 'utf-8');
-            fileName = basename(filePath);
-            language = detectLanguage(filePath);
-
-            // Analyze code context (like GitHub Copilot)
-            if (options.context !== false) { // Default to true
-                console.log(chalk.dim('🔍 Analyzing code context...'));
-                codeContext = await analyzeCodeContext(filePath, fileContent, language);
-            }
-
-            console.log(chalk.dim(`📖 Read file: ${fileName} (${language})\n`));
-        } catch (error) {
-            console.error(chalk.red(`❌ Cannot read file: ${filePath}`));
-            console.error(chalk.dim(error instanceof Error ? error.message : String(error)));
-            process.exit(1);
-        }
     }
 
-    const prompt = options.prompt || (options.create ? 'Please generate code based on the following description.' : 'Please review this code and provide suggestions for improvement.');
-
-    console.log(chalk.dim('⏳ Sending to MCP server with context...\n'));
-
-    const context = client.getCurrentContext();
-    // Add file info to context
-    if (context.context) {
-        context.context.filename = fileName;
-        context.context.language = language;
+    // If user didn't supply an output path, try to auto-select one.
+    if (options.create && !options.output) {
+        const promptText = options.prompt || filePath || '';
+        const chosen = chooseOutputForCreate(promptText, language);
+        options.output = chosen;
+        fileName = basename(chosen);
+        language = detectLanguage(chosen);
+        console.log(chalk.dim(`✨ Auto-selected output: ${options.output}`));
+        const candidates = _findCandidateFiles(promptText, 8);
+        if (candidates.length > 0) console.log(chalk.dim(`  Candidate files considered: ${candidates.slice(0, 5).join(', ')}`));
     }
-
-    // Build enhanced message with context (GitHub Copilot style + project context)
-    let basePrompt = buildEnhancedPrompt(prompt, fileName, language, fileContent, codeContext, options.create);
-    let fullMessage = buildContextualPrompt(basePrompt, projectContext, 'code');
-
+} else if (options.stdin || actualFilePath === '-') {
+    // Read from stdin
+    console.log(chalk.dim('📖 Reading from stdin...'));
+    fileContent = await readStdin();
+    fileName = 'stdin';
+    language = 'text';
+} else {
+    // Read from file
     try {
-        let response = await client.send({
-            mode: 'code',
-            message: fullMessage,
-            budget: 0, // Free tier for code analysis
-            ...context,
-        });
+        fileContent = readFileSync(actualFilePath, 'utf-8');
+        fileName = basename(actualFilePath);
+        language = detectLanguage(actualFilePath);
 
-        // Handle escalation confirmation if required
-        if (response.requiresEscalationConfirm && response.suggestedLayer) {
-            const currentLayer = response.metadata?.layer || 'L0';
+        // Analyze code context (like GitHub Copilot)
+        if (options.context !== false) { // Default to true
+            console.log(chalk.dim('🔍 Analyzing code context...'));
+            codeContext = await analyzeCodeContext(actualFilePath, fileContent, language);
+        }
 
-            // Check if Claude Code mode is available/preferred
-            const { shouldUse, projectRoot } = await shouldUseClaudeCode(
-                process.cwd(),
-                options.useClaudeCode
-            );
+        console.log(chalk.dim(`📖 Read file: ${fileName} (${language})\n`));
+    } catch (error) {
+        console.error(chalk.red(`❌ Cannot read file: ${actualFilePath}`));
+        console.error(chalk.dim(error instanceof Error ? error.message : String(error)));
+        process.exit(1);
+    }
+}
 
-            // Allow Claude Code escalation even with free budget if Claude Code is enabled
-            const budgetAllowsEscalation = response.cost ? response.cost > 0 : false;
-            const claudeCodeAvailable = shouldUse && (projectRoot || options.useClaudeCode);
+const prompt = options.prompt || (options.create ? 'Please generate code based on the following description.' : 'Please review this code and provide suggestions for improvement.');
 
-            if (claudeCodeAvailable && (!budgetAllowsEscalation || shouldUse)) {
-                // Offer Claude Code instead of escalation
-                const taskSummary = createTaskSummary('code', filePath, options.prompt);
-                const useClaudeCode = await promptClaudeCodeInsteadOfEscalation(
-                    taskSummary,
-                    currentLayer,
-                    response.suggestedLayer,
-                    response.escalationReason || 'Quality improvement needed'
-                );
+console.log(chalk.dim('⏳ Sending to MCP server with context...\n'));
 
-                if (useClaudeCode && (projectRoot || options.useClaudeCode)) {
-                    // Launch Claude Code and exit
-                    await executeWithClaudeCode(taskSummary, projectRoot || process.cwd());
-                    process.exit(0);
-                }
-                // If user declined Claude Code, continue with normal escalation below
-            }
+const context = client.getCurrentContext();
+// Add file info to context
+if (context.context) {
+    context.context.filename = fileName;
+    context.context.language = language;
+}
 
-            // Normal escalation flow (when Claude Code not available or user declined)
-            const shouldEscalate = await promptEscalationConfirm(
+// Build enhanced message with context (GitHub Copilot style + project context)
+let basePrompt = buildEnhancedPrompt(prompt, fileName, language, fileContent, codeContext, options.create);
+let fullMessage = buildContextualPrompt(basePrompt, projectContext, 'code');
+
+try {
+    let response = await client.send({
+        mode: 'code',
+        message: fullMessage,
+        budget: 0, // Free tier for code analysis
+        ...context,
+    });
+
+    // Handle escalation confirmation if required
+    if (response.requiresEscalationConfirm && response.suggestedLayer) {
+        const currentLayer = response.metadata?.layer || 'L0';
+
+        // Check if Claude Code mode is available/preferred
+        const { shouldUse, projectRoot } = await shouldUseClaudeCode(
+            process.cwd(),
+            options.useClaudeCode
+        );
+
+        // Allow Claude Code escalation even with free budget if Claude Code is enabled
+        const budgetAllowsEscalation = response.cost ? response.cost > 0 : false;
+        const claudeCodeAvailable = shouldUse && (projectRoot || options.useClaudeCode);
+
+        if (claudeCodeAvailable && (!budgetAllowsEscalation || shouldUse)) {
+            // Offer Claude Code instead of escalation
+            const taskSummary = createTaskSummary('code', filePath, options.prompt);
+            const useClaudeCode = await promptClaudeCodeInsteadOfEscalation(
+                taskSummary,
                 currentLayer,
                 response.suggestedLayer,
                 response.escalationReason || 'Quality improvement needed'
             );
 
-            if (shouldEscalate) {
-                console.log(chalk.cyan(`\n🔄 Escalating to ${response.suggestedLayer}...\n`));
-
-                // Use optimized prompt if available, otherwise use original
-                const escalatedMessage = response.optimizedPrompt || fullMessage;
-
-                response = await client.send({
-                    mode: 'code',
-                    message: escalatedMessage,
-                    budget: 0, // Free tier for code analysis
-                    ...context,
-                });
+            if (useClaudeCode && (projectRoot || options.useClaudeCode)) {
+                // Launch Claude Code and exit
+                await executeWithClaudeCode(taskSummary, projectRoot || process.cwd());
+                process.exit(0);
             }
+            // If user declined Claude Code, continue with normal escalation below
         }
 
-        printResponse(response, codeContext, options.create, options.output);
+        // Normal escalation flow (when Claude Code not available or user declined)
+        const shouldEscalate = await promptEscalationConfirm(
+            currentLayer,
+            response.suggestedLayer,
+            response.escalationReason || 'Quality improvement needed'
+        );
 
-        // Track task in project history
-        try {
-            const historyEntry: ProjectHistoryEntry = {
-                timestamp: new Date().toISOString(),
-                task: options.create ? 'Code Generation' : 'Code Review',
-                summary: createSimpleTaskSummary(options.create ? 'create' : 'review', fileName, prompt),
-                budgetUsed: response.cost || 0,
-                budgetRemaining: 0, // TODO: Track actual budget
-                model: response.model,
-                layer: response.metadata?.layer
-            };
+        if (shouldEscalate) {
+            console.log(chalk.cyan(`\n🔄 Escalating to ${response.suggestedLayer}...\n`));
 
-            appendToHistory(process.cwd(), historyEntry);
-        } catch (error) {
-            // Don't fail if history tracking fails
-            console.log(chalk.dim('Note: Could not update project history'));
+            // Use optimized prompt if available, otherwise use original
+            const escalatedMessage = response.optimizedPrompt || fullMessage;
+
+            response = await client.send({
+                mode: 'code',
+                message: escalatedMessage,
+                budget: 0, // Free tier for code analysis
+                ...context,
+            });
         }
-
-        // Check if project files need updates based on response
-        // TODO: Implement smart detection of when to update project docs
-    } catch (error) {
-        process.exit(1);
     }
+
+    await printResponse(response, codeContext, options.create, options.output);
+
+    // Track task in project history
+    try {
+        const historyEntry: ProjectHistoryEntry = {
+            timestamp: new Date().toISOString(),
+            task: options.create ? 'Code Generation' : 'Code Review',
+            summary: createSimpleTaskSummary(options.create ? 'create' : 'review', fileName, prompt),
+            budgetUsed: response.cost || 0,
+            budgetRemaining: 0, // TODO: Track actual budget
+            model: response.model,
+            layer: response.metadata?.layer
+        };
+
+        appendToHistory(process.cwd(), historyEntry);
+    } catch (error) {
+        // Don't fail if history tracking fails
+        console.log(chalk.dim('Note: Could not update project history'));
+    }
+
+    // NEW BEHAVIOR: Full-file replacement with preview/apply workflow
+    // Default: preview mode — print the generated content to stdout and
+    // instruct the user to re-run with `--apply` to persist changes.
+    // If `--apply` is provided, create a `.bak` backup of the original file
+    // and then overwrite the target file.
+    if (!options.create && actualFilePath && response?.message) {
+        const fs = await import('fs');
+        const newContent = typeof response.message === 'string'
+            ? response.message
+            : JSON.stringify(response.message, null, 2);
+
+        const applying = !!options.apply;
+
+        try {
+            if (fs.existsSync(actualFilePath)) {
+                const ok = await confirmPrompt(`Overwrite existing file ${actualFilePath}?`, false, false);
+                if (!ok) {
+                    console.log(chalk.yellow(`\n✋ Skipped overwrite of existing file: ${actualFilePath}`));
+                    return;
+                }
+            }
+
+            // Use safeWriteFile to handle backups and parent dir creation
+            const result = safeWriteFile(actualFilePath, newContent, { backup: true, force: !!options.apply });
+            if (result.written) {
+                if (result.backupPath) console.log(chalk.dim(`Backup created: ${result.backupPath}`));
+                console.log(chalk.green(`\n✅ Applied changes to: ${actualFilePath}`));
+                console.log(chalk.dim(`📄 New file size: ${newContent.length} characters`));
+            } else {
+                console.log(chalk.red(`\n❌ Did not write file: ${actualFilePath}`));
+            }
+        } catch (error) {
+            console.error(chalk.red(`\n❌ Failed to write file: ${error instanceof Error ? error.message : String(error)}`));
+        }
+    }
+
+}
+    }
+
+    // Check if project files need updates based on response
+    // TODO: Implement smart detection of when to update project docs
+} catch (error) {
+    process.exit(1);
+}
 }
 
 /**
@@ -493,7 +532,17 @@ function buildEnhancedPrompt(
     prompt += `3. **Bugs & Issues** - Potential bugs, edge cases, error handling\n`;
     prompt += `4. **Performance** - Optimization opportunities\n`;
     prompt += `5. **Security** - Security vulnerabilities if any\n`;
-    prompt += `6. **Suggestions** - Concrete improvement suggestions with code examples\n`;
+    prompt += `6. **Suggestions** - Concrete improvement suggestions with code examples\n\n`;
+
+    // Add PATCH instructions for file modification
+    prompt += `**IMPORTANT:** You MUST use PATCH markers for ANY code changes:\n`;
+    prompt += `\`\`\`typescript\n`;
+    prompt += `// PATCH START - Brief description of what you're changing\n`;
+    prompt += `// Your modified code here\n`;
+    prompt += `// PATCH END\n`;
+    prompt += `\`\`\`\n\n`;
+    prompt += `**CRITICAL:** Do NOT provide code without PATCH markers. Always wrap code changes in PATCH START/END markers.\n`;
+    prompt += `For test files, provide the complete updated test file content within PATCH markers.\n`;
 
     return prompt;
 }
@@ -573,7 +622,7 @@ function detectLanguage(filePath: string): string {
 /**
  * Print code review/generation response with context info
  */
-function printResponse(response: any, codeContext?: CodeContext, isCreate?: boolean, outputFile?: string): void {
+async function printResponse(response: any, codeContext?: CodeContext, isCreate?: boolean, outputFile?: string): Promise<void> {
     const title = isCreate ? 'MCP CODE GENERATION RESPONSE' : 'MCP CODE REVIEW RESPONSE';
     console.log(chalk.cyan('╔' + '═'.repeat(58) + '╗'));
     console.log(chalk.cyan('║') + chalk.bold(` ${title} `).padEnd(58) + chalk.cyan('║'));
@@ -595,16 +644,11 @@ function printResponse(response: any, codeContext?: CodeContext, isCreate?: bool
     const content = response.message || JSON.stringify(response, null, 2);
 
     if (isCreate && outputFile) {
-        // Write to file
-        try {
-            const { writeFileSync } = require('fs');
-            writeFileSync(outputFile, content);
-            console.log(chalk.green(`✅ Generated code saved to: ${outputFile}`));
-            console.log(chalk.dim(`📄 File size: ${content.length} characters`));
-        } catch (error) {
-            console.error(chalk.red(`❌ Failed to save file: ${outputFile}`));
-            console.log(content);
-        }
+        // Preview mode: show generated content and instruct user to re-run with --apply
+        console.log(chalk.cyan('----- BEGIN GENERATED CONTENT (PREVIEW) -----'));
+        console.log(content);
+        console.log(chalk.cyan('-----  END GENERATED CONTENT (PREVIEW)  -----\n'));
+        console.log(chalk.dim(`To persist these changes, re-run the command with the \'--apply\' flag.`));
     } else {
         console.log(chalk.white(content));
     }

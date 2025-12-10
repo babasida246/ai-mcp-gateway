@@ -78,7 +78,7 @@ async function fetchAPI(endpoint: string): Promise<unknown> {
         return await response.json();
     } catch (error) {
         if (error instanceof Error && error.message.includes('ECONNREFUSED')) {
-            console.error('❌ Cannot connect to AI MCP Gateway API');
+            console.error('❌ Cannot connect to MCP Gateway API');
             console.error('   Make sure the gateway is running with: npm run start:api');
             process.exit(1);
         }
@@ -93,10 +93,10 @@ async function fetchAPI(endpoint: string): Promise<unknown> {
 async function showHelp(): Promise<void> {
     console.log(`
 ╔═══════════════════════════════════════════════════════════════╗
-║                    AI MCP Gateway CLI v${VERSION}                  ║
+║                    MCP Gateway CLI v${VERSION}                  ║
 ╚═══════════════════════════════════════════════════════════════╝
 
-Usage: ai-mcp-gateway <command> [subcommand] [options]
+Usage: mcp-gateway <command> [subcommand] [options]
 
 Commands:
   help                      Show this help message
@@ -109,10 +109,10 @@ Commands:
   config set <key> <value>  Set a configuration value
 
 Examples:
-  ai-mcp-gateway status
-  ai-mcp-gateway models list
-  ai-mcp-gateway providers
-  ai-mcp-gateway config show
+    mcp-gateway status
+    mcp-gateway models list
+    mcp-gateway providers
+    mcp-gateway config show
 
 Environment Variables:
   API_URL                   Gateway API URL (default: http://localhost:3000)
@@ -127,7 +127,7 @@ For more information, visit: https://github.com/babasida246/ai-mcp-gateway
  * Shows server stats with formatted output.
  */
 async function showStatus(): Promise<void> {
-    console.log('\n🔍 Checking AI MCP Gateway status...\n');
+    console.log('\n🔍 Checking MCP Gateway status...\n');
 
     try {
         const health = await fetchAPI('/health') as {
@@ -467,6 +467,30 @@ export async function runCLI(args: string[]): Promise<void> {
     }
 
     // Unknown command
+    // Support starting the MCP server via CLI: `mcp-serve` (allows --transport and --port)
+    if (command === 'mcp-serve') {
+        // Simple option parsing for transport and port
+        let transport = 'stdio';
+        let port = 3001;
+        for (let i = 1; i < args.length; i++) {
+            const a = args[i];
+            const v = args[i + 1];
+            if (!v) continue;
+            if (a === '--transport' || a === '-t') transport = v;
+            if (a === '--port' || a === '-p') port = parseInt(v, 10) || port;
+        }
+
+        try {
+            const { startMcpServer } = await import('../mcp/adapter/index.js');
+            console.log(`Starting MCP server via CLI (transport=${transport}, port=${port})`);
+            await startMcpServer({ transport: transport as any, port });
+            return;
+        } catch (err) {
+            console.error('Failed to start MCP server:', err instanceof Error ? err.message : String(err));
+            process.exit(1);
+        }
+    }
+
     console.error(`Unknown command: ${command}`);
     console.error('Run "ai-mcp-gateway help" for usage information');
     process.exit(1);

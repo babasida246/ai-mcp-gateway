@@ -9,13 +9,17 @@ interface ProjectSummaryOptions {
     budget?: number;
     model?: string;
     verbose?: boolean;
+    endpoint?: string;
+    apiKey?: string;
+    username?: string;
+    password?: string;
 }
 
 /**
  * Generate a comprehensive project summary by analyzing all project files and history
  */
 export async function summarizeProject(options: ProjectSummaryOptions = {}) {
-    const client = new MCPClient();
+    const client = new MCPClient(options.endpoint, options.apiKey, options.username, options.password);
 
     try {
         console.log(chalk.blue('📊 Analyzing project for summary generation...'));

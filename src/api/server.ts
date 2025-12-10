@@ -22,6 +22,7 @@ import { createAdminRoutes } from './admin.js';
 import {
     buildContextForRequest,
     queueMessageEmbedding,
+    saveAssistantResponse,
     type ChatContextStrategy
 } from '../services/chat/index.js';
 
@@ -989,7 +990,8 @@ export class APIServer {
             if (conversation_id) {
                 queueMessageEmbedding(conversation_id, lastUserMessage.content);
                 if (result.content) {
-                    queueMessageEmbedding(conversation_id, result.content);
+                    // Save assistant response to database
+                    await saveAssistantResponse(conversation_id, result.content, result.modelId);
                 }
             }
 

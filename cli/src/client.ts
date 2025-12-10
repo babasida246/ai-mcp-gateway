@@ -56,14 +56,19 @@ export interface MCPResponse {
 export class MCPClient {
     private client: AxiosInstance;
     private endpoint: string;
+    private token: string | null = null;
+    private username?: string;
+    private password?: string;
 
-    constructor(endpoint?: string, apiKey?: string) {
+    constructor(endpoint?: string, apiKey?: string, username?: string, password?: string) {
         // Get configuration from environment or parameters
         this.endpoint = endpoint
             || process.env.MCP_ENDPOINT
             || 'http://localhost:3000';
 
         const key = apiKey || process.env.MCP_API_KEY;
+        const user = username || process.env.MCP_USERNAME;
+        const pass = password || process.env.MCP_PASSWORD;
 
         // Create axios instance with default config
         this.client = axios.create({
@@ -71,17 +76,81 @@ export class MCPClient {
             timeout: 1800000, // 30 minute timeout for complex prompts
             headers: {
                 'Content-Type': 'application/json',
-                ...(key ? { 'Authorization': `Bearer ${key}` } : {}),
             },
         });
+
+        // If API key provided, use it directly
+        if (key) {
+            this.token = key;
+            this.client.defaults.headers.common['Authorization'] = `Bearer ${key}`;
+        }
+        // Otherwise, try to login if credentials provided
+        else if (user && pass) {
+            // Login will be done lazily in send() method
+            this.username = user;
+            this.password = pass;
+        }
+    }
+
+    /**
+     * Login to get authentication token
+     */
+    private async login(username: string, password: string): Promise<void> {
+        try {
+            console.log(`🔐 Logging in as ${username}...`);
+            const response = await this.client.post('/v1/auth/login', {
+                username,
+                password,
+            });
+
+            if (response.data.token) {
+                this.token = response.data.token;
+                this.client.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
+                console.log('✅ Login successful');
+            } else {
+                throw new Error('Login failed: No token received');
+            }
+        } catch (error) {
+            console.error('❌ Login failed:', error);
+            throw new Error(`Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    /**
+     * Check if the MCP Gateway server is healthy
+     */
+    async checkHealth(): Promise<{ healthy: boolean; message: string; details?: any }> {
+        try {
+            const response = await this.client.get('/health', { timeout: 5000 });
+            return { healthy: true, message: 'Server is healthy', details: response.data };
+        } catch (error) {
+            if (axios.isAxiosError(error)) {
+                if (error.code === 'ECONNREFUSED') {
+                    return { healthy: false, message: 'Cannot connect to MCP Gateway server' };
+                }
+                if (error.response) {
+                    return { healthy: false, message: `Server error: ${error.response.status}`, details: error.response.data };
+                }
+            }
+            return { healthy: false, message: `Unknown error: ${error}` };
+        }
     }
 
     /**
      * Send request to MCP Gateway
      */
     async send(request: MCPRequest): Promise<MCPResponse> {
+        // Login if we have credentials but no token yet
+        // TEMPORARILY DISABLED FOR TESTING
+        // if (!this.token && this.username && this.password) {
+        //     console.log('🔑 No token, attempting login...');
+        //     await this.login(this.username, this.password);
+        // }
+
+        console.log('📤 Sending request to MCP...');
         try {
             const response = await this.client.post<MCPResponse>('/v1/mcp-cli', request);
+            console.log('✅ Request successful');
             return response.data;
         } catch (error) {
             this.handleError(error);

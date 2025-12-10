@@ -2,12 +2,12 @@
 # Simpler setup - only essential services
 
 services:
-  # AI MCP Gateway - API Server
-  ai-mcp-gateway:
+  # MCP Gateway - API Server
+  mcp-gateway:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ai-mcp-gateway-dev
+    container_name: mcp-gateway-dev
     restart: unless-stopped
     ports:
       - "3000:3000"

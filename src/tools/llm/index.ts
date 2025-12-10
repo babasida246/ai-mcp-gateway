@@ -143,6 +143,16 @@ export async function callLLM(
         layer: model.layer,
     });
 
+    // Log request details
+    logger.info('[LLM] Request details', {
+        modelId: model.id,
+        provider: model.provider,
+        layer: model.layer,
+        promptPreview: request.prompt.substring(0, 300) + (request.prompt.length > 300 ? '...' : ''),
+        promptLength: request.prompt.length,
+        hasSystemPrompt: !!request.systemPrompt,
+    });
+
     const startTime = Date.now();
 
     try {
@@ -159,6 +169,18 @@ export async function callLLM(
         logger.debug('LLM call completed', {
             modelId: model.id,
             provider: response.provider,
+            inputTokens: response.inputTokens,
+            outputTokens: response.outputTokens,
+            cost: response.cost.toFixed(6),
+            duration,
+        });
+
+        // Log response preview
+        logger.info('[LLM] Response received', {
+            modelId: model.id,
+            provider: response.provider,
+            responsePreview: response.content.substring(0, 300) + (response.content.length > 300 ? '...' : ''),
+            responseLength: response.content.length,
             inputTokens: response.inputTokens,
             outputTokens: response.outputTokens,
             cost: response.cost.toFixed(6),

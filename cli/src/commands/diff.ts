@@ -20,11 +20,13 @@ export async function diffCommand(
         prompt?: string;
         endpoint?: string;
         apiKey?: string;
+        username?: string;
+        password?: string;
         apply?: boolean;
         useClaudeCode?: boolean;
     }
 ): Promise<void> {
-    const client = new MCPClient(options.endpoint, options.apiKey);
+    const client = new MCPClient(options.endpoint, options.apiKey, options.username, options.password);
 
     let fileContent: string;
     let fileName: string;

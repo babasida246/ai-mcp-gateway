@@ -16,6 +16,8 @@ import OpenRouterInfo from './pages/OpenRouterInfo';
 import GPTPlus from './pages/GPTPlus';
 import WebTerminal from './pages/WebTerminal';
 import Chat from './pages/Chat';
+import McpTools from './pages/McpTools';
+import Backends from './pages/Backends';
 
 function App() {
   const { authEnabled, isAuthenticated, loading, login, logout, user } = useAuthStatus();
@@ -67,6 +69,8 @@ function App() {
                   <Route path="/openrouter" element={<OpenRouterInfo />} />
                   <Route path="/gpt-plus" element={<GPTPlus />} />
                   <Route path="/terminal" element={<WebTerminal />} />
+                  <Route path="/mcp-tools" element={<McpTools />} />
+                  <Route path="/backends" element={<Backends />} />
                   <Route path="/alerts" element={<Alerts />} />
                   <Route path="/settings" element={<Settings />} />
                 </Routes>

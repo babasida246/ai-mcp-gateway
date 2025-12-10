@@ -185,12 +185,26 @@ export class ChatContextBuilder {
             }
 
             const duration = Date.now() - startTime;
+
+            // Log detailed context information for debugging
             logger.info('[ChatContextBuilder] Context built successfully', {
                 conversationId: params.conversationId,
                 strategy: result.strategyUsed,
                 totalTokens: result.totalTokens,
                 messageCount: result.messageCount,
                 durationMs: duration,
+                metadata: result.metadata,
+            });
+
+            // Log the actual messages being sent (preview)
+            logger.debug('[ChatContextBuilder] Messages in context', {
+                conversationId: params.conversationId,
+                messages: result.messages.map((msg, idx) => ({
+                    index: idx,
+                    role: msg.role,
+                    contentPreview: msg.content.substring(0, 150) + (msg.content.length > 150 ? '...' : ''),
+                    tokens: msg.tokenEstimate,
+                })),
             });
 
             return result;
@@ -839,10 +853,7 @@ export class ChatContextBuilder {
                 `${m.role.toUpperCase()}: ${m.content}`
             ).join('\n\n');
 
-            // TODO: Call L0 model to generate summary
-            // For now, we'll use a simple approach - in production, this would call the router
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const _summaryPrompt = `Please provide a concise summary of the following conversation, 
+            const summaryPrompt = `Please provide a concise summary of the following conversation, 
 capturing the key points, decisions made, and important context that would be helpful 
 for continuing the conversation. Keep the summary under 500 words.
 
@@ -851,15 +862,37 @@ ${transcript}
 
 Summary:`;
 
-            // Placeholder: In production, this would call the L0 router
-            // const summaryResult = await router.routeRequest({
-            //   messages: [{ role: 'user', content: summaryPrompt }],
-            //   model: 'gpt-4o-mini', // Use efficient model for summarization
-            // });
-            // const summary = summaryResult.content;
+            // Use L0 model for summarization (efficient model)
+            let summary: string;
+            try {
+                // Try to use LLM for summarization
+                const { routeRequest } = await import('../../routing/router.js');
 
-            // For now, create a simple extractive summary
-            const summary = this.createExtractiveSum(messages);
+                const summaryResult = await routeRequest(
+                    { prompt: summaryPrompt },
+                    {
+                        quality: 'fast',
+                        complexity: 'low',
+                        taskType: 'general' as const,
+                    }
+                );
+
+                summary = summaryResult.content;
+
+                logger.debug('[ChatContextBuilder] LLM-based summary generated', {
+                    conversationId,
+                    summaryLength: summary.length,
+                    model: summaryResult.modelId,
+                });
+            } catch (error) {
+                // Fallback to extractive summary if LLM fails
+                logger.warn('[ChatContextBuilder] LLM summarization failed, using extractive', {
+                    conversationId,
+                    error: error instanceof Error ? error.message : String(error),
+                });
+                summary = this.createExtractiveSum(messages);
+            }
+
             const summaryTokens = estimateTokensSync(summary);
 
             // Update conversation with summary
@@ -1022,30 +1055,93 @@ export const chatContextBuilder = new ChatContextBuilder();
 
 /**
  * Resolve chat context config for a specific project/tool/model combination
- * TODO: Implement DB-backed configuration
+ * Loads from database with fallback chain: project+tool -> project -> tool -> default
  */
 export async function resolveChatContextConfig(
-    _projectId?: string,
-    _toolId?: string,
+    projectId?: string,
+    toolId?: string,
     modelId?: string
 ): Promise<ChatContextConfig> {
     // Start with defaults
     let config = { ...DEFAULT_CHAT_CONTEXT_CONFIG };
 
-    // TODO: Load from database
-    // const projectConfig = await loadProjectConfig(projectId);
-    // const toolConfig = await loadToolConfig(toolId);
-    // const modelConfig = await loadModelConfig(modelId);
+    // Try to load from database
+    try {
+        // Build query with fallback chain
+        const query = `
+            SELECT * FROM chat_context_config
+            WHERE (
+                (project_id = $1 AND tool_id = $2) OR
+                (project_id = $1 AND tool_id IS NULL) OR
+                (project_id IS NULL AND tool_id = $2) OR
+                (project_id IS NULL AND tool_id IS NULL)
+            )
+            ORDER BY 
+                CASE 
+                    WHEN project_id IS NOT NULL AND tool_id IS NOT NULL THEN 1
+                    WHEN project_id IS NOT NULL THEN 2
+                    WHEN tool_id IS NOT NULL THEN 3
+                    ELSE 4
+                END
+            LIMIT 1
+        `;
+
+        const result = await db.query<{
+            strategy: ChatContextStrategy;
+            max_prompt_tokens: number;
+            recent_min_messages: number;
+            enable_summarization: boolean;
+            summary_trigger_tokens: number;
+            span_top_k: number;
+            span_radius: number;
+            span_budget_ratio: number;
+        }>(query, [projectId || null, toolId || null]);
+
+        if (result && result.rows.length > 0) {
+            const dbConfig = result.rows[0];
+            config = {
+                strategy: dbConfig.strategy,
+                maxPromptTokens: dbConfig.max_prompt_tokens,
+                recentMinMessages: dbConfig.recent_min_messages,
+                recentMaxMessages: DEFAULT_CHAT_CONTEXT_CONFIG.recentMaxMessages,
+                spanTopK: dbConfig.span_top_k,
+                spanRadius: dbConfig.span_radius,
+                spanBudgetRatio: Number(dbConfig.span_budget_ratio),
+                spanMinSimilarity: DEFAULT_CHAT_CONTEXT_CONFIG.spanMinSimilarity,
+                summarizationThreshold: dbConfig.summary_trigger_tokens,
+                systemPrompt: undefined,
+            };
+
+            logger.debug('[ChatContextBuilder] Loaded config from database', {
+                projectId,
+                toolId,
+                strategy: config.strategy,
+            });
+        }
+    } catch (error) {
+        logger.debug('[ChatContextBuilder] Could not load config from DB, using defaults', {
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
 
     // Adjust token limits based on model
     if (modelId) {
         if (modelId.includes('gpt-4')) {
-            config.maxPromptTokens = 8192;
+            config.maxPromptTokens = Math.max(config.maxPromptTokens, 8192);
+        } else if (modelId.includes('claude-3-opus')) {
+            config.maxPromptTokens = Math.max(config.maxPromptTokens, 150000);
         } else if (modelId.includes('claude-3')) {
-            config.maxPromptTokens = 100000;
+            config.maxPromptTokens = Math.max(config.maxPromptTokens, 100000);
+        } else if (modelId.includes('claude')) {
+            config.maxPromptTokens = Math.max(config.maxPromptTokens, 100000);
         } else if (modelId.includes('gpt-3.5')) {
-            config.maxPromptTokens = 4096;
+            config.maxPromptTokens = Math.min(config.maxPromptTokens, 4096);
         }
+
+        logger.debug('[ChatContextBuilder] Adjusted token limit for model', {
+            modelId,
+            maxPromptTokens: config.maxPromptTokens,
+        });
     }
 
     return config;

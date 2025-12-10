@@ -1,12 +1,12 @@
 {
-    "name": "ai-mcp-gateway",
+    "name": "mcp-gateway",
     "version": "0.1.0",
     "description": "AI MCP Gateway - Cost-Optimized Multi-Model Orchestrator for Code & Tools",
     "type": "module",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "bin": {
-        "ai-mcp-gateway": "./dist/index.js"
+        "mcp-gateway": "./dist/index.js"
     },
     "scripts": {
         "build": "tsup",
@@ -56,7 +56,8 @@
         "ssh2": "^1.17.0",
         "uuid": "^13.0.0",
         "winston": "^3.14.2",
-        "zod": "^3.25.76"
+        "zod": "^3.25.76",
+        "ws": "^8.13.0"
     },
     "devDependencies": {
         "@playwright/test": "^1.48.0",
@@ -73,7 +74,8 @@
         "tsup": "^8.2.3",
         "tsx": "^4.21.0",
         "typescript": "^5.5.3",
-        "vitest": "^2.1.1"
+        "vitest": "^2.1.1",
+        "supertest": "^6.3.3"
     },
     "engines": {
         "node": ">=20.0.0"

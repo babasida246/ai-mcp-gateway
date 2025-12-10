@@ -26,6 +26,8 @@ export async function analyzeCommand(
         prompt?: string;
         endpoint?: string;
         apiKey?: string;
+        username?: string;
+        password?: string;
         maxFiles?: number;
         recursive?: boolean;
         useClaudeCode?: boolean;
@@ -34,7 +36,7 @@ export async function analyzeCommand(
     console.log(chalk.cyan.bold('\n🔍 MCP Codebase Analyzer\n'));
     console.log(chalk.dim('─'.repeat(50)));
 
-    const client = new MCPClient(options.endpoint, options.apiKey);
+    const client = new MCPClient(options.endpoint, options.apiKey, options.username, options.password);
 
     // Read project context files
     console.log(chalk.dim('🔍 Reading project context...'));
@@ -52,7 +54,11 @@ export async function analyzeCommand(
             await summarizeProject({
                 output: 'temp-project-summary.md',
                 budget: 0, // Free tier for initial analysis
-                verbose: true
+                verbose: true,
+                endpoint: options.endpoint,
+                apiKey: options.apiKey,
+                username: options.username,
+                password: options.password
             });
 
             // Read the generated summary

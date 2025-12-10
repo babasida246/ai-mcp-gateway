@@ -33,22 +33,30 @@ const firstArg = args[0]?.toLowerCase();
  * These commands use the lightweight CLI module and exit immediately.
  * @see {@link ./cli/index.ts} for CLI implementation
  */
-const cliCommands = ['help', '--help', '-h', 'status', 'models', 'providers', 'db', 'config', '--version', '-v'];
+const cliCommands = ['help', '--help', '-h', 'status', 'models', 'providers', 'db', 'config', 'mcp-serve', 'mcp', '--version', '-v'];
 
 // Early exit for CLI commands - avoids loading heavy server modules (db, redis, etc.)
 if (firstArg && cliCommands.some(cmd => firstArg === cmd || firstArg.startsWith(cmd))) {
     // Dynamic import to avoid loading server modules
     const { runCLI } = await import('./cli/index.js');
     await runCLI(args);
-    process.exit(0);
+
+    // If the CLI command was used to start the MCP server, do not exit the process
+    // because the MCP server runs in-process and must keep the event loop alive.
+    if (firstArg === 'mcp-serve') {
+        // Return to allow the MCP server to keep running
+    } else {
+        process.exit(0);
+    }
 }
 
 /**
  * Server modules - dynamically imported only when running in server mode.
  * This pattern keeps CLI commands fast by avoiding unnecessary module loading.
  */
-const { startMCPServer } = await import('./mcp/server.js');
 const { apiServer } = await import('./api/server.js');
+// MCP adapter provides advanced transport options (stdio/websocket)
+const { startMcpServer } = await import('./mcp/adapter/index.js');
 const { db } = await import('./db/postgres.js');
 const { redisCache } = await import('./cache/redis.js');
 const { logger } = await import('./logging/logger.js');
@@ -106,8 +114,20 @@ async function main() {
             logger.info('Starting in HTTP API mode');
             await apiServer.start();
         } else {
-            logger.info('Starting in MCP mode (stdio)');
-            await startMCPServer();
+            // Allow selecting transport via environment for containerized deployments
+            const mcpTransport = (process.env.MCP_TRANSPORT || process.env.MCP_TRANSPORT_TYPE || '').toLowerCase();
+            const wsPort = process.env.MCP_WEBSOCKET_PORT ? parseInt(process.env.MCP_WEBSOCKET_PORT, 10) : undefined;
+
+            if (mcpTransport === 'websocket') {
+                logger.info(`Starting in MCP mode (websocket) on port ${wsPort || 3001}`);
+                await startMcpServer({ transport: 'websocket', port: wsPort });
+            } else if (mcpTransport === 'stdio') {
+                logger.info('Starting in MCP mode (stdio)');
+                await startMcpServer({ transport: 'stdio' });
+            } else {
+                logger.info('Starting in MCP mode (stdio)');
+                await startMcpServer();
+            }
         }
 
         // Graceful shutdown

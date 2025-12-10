@@ -47,6 +47,22 @@ export class AnthropicClient implements LLMClient {
         });
 
         try {
+            // Log full prompt for debugging
+            logger.info('[Anthropic] Sending prompt to model', {
+                model: model.apiModelName,
+                systemPrompt: request.systemPrompt ? request.systemPrompt.substring(0, 200) + '...' : 'none',
+                userPrompt: request.prompt.substring(0, 500) + (request.prompt.length > 500 ? '...' : ''),
+                fullPromptLength: request.prompt.length,
+                maxTokens: request.maxTokens || 4096,
+                temperature: request.temperature || 0.7,
+            });
+
+            // Log complete prompt for detailed debugging
+            logger.debug('[Anthropic] Complete request details', {
+                systemPrompt: request.systemPrompt,
+                userMessage: request.prompt.substring(0, 1000) + (request.prompt.length > 1000 ? '...' : ''),
+            });
+
             const response = await client.messages.create({
                 model: model.apiModelName,
                 max_tokens: request.maxTokens || 4096,

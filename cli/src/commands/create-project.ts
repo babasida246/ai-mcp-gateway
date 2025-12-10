@@ -31,6 +31,8 @@ export async function createProjectCommand(
     options: {
         endpoint?: string;
         apiKey?: string;
+        username?: string;
+        password?: string;
         budget?: number;
         maxLayer?: string;
         noTests?: boolean;
@@ -42,23 +44,56 @@ export async function createProjectCommand(
     console.log(chalk.cyan.bold('\n🚀 MCP Project Generator\n'));
     console.log(chalk.dim('─'.repeat(50)));
 
-    const client = new MCPClient(options.endpoint, options.apiKey);
+    const client = new MCPClient(options.endpoint, options.apiKey, options.username, options.password);
 
-    // Auto-detect mcp-instructor.md if no description provided
+    // Check server health before proceeding
+    console.log(chalk.dim('🔍 Checking MCP Gateway server health...'));
+    const healthStatus = await client.checkHealth();
+    if (!healthStatus.healthy) {
+        console.log(chalk.red(`\n❌ MCP Gateway server is not available`));
+        console.log(chalk.yellow(`   ${healthStatus.message}`));
+        console.log(chalk.dim(`\n💡 Make sure the MCP Gateway server is running:`));
+        console.log(chalk.dim(`   cd e:\\GitHub\\ai-mcp-gateway && npm start`));
+        console.log(chalk.dim(`   Or: docker-compose up -d`));
+        console.log(chalk.dim(`\n   Default endpoint: http://localhost:3000`));
+        console.log(chalk.dim(`   Set custom endpoint: MCP_ENDPOINT=http://your-server:port`));
+        process.exit(1);
+    }
+    console.log(chalk.green('✅ Server is healthy\n'));
+
+    // Auto-detect instruction file (mcp-instruction.md or mcp-instructor.md) if no description provided
     let finalDescription = description;
     if (!finalDescription) {
-        const instructorPath = 'mcp-instructor.md';
-        if (fs.existsSync(instructorPath)) {
-            console.log(chalk.green(`📖 Found ${instructorPath}, using as project description...`));
+        // Check multiple possible instruction file names
+        const instructionFiles = [
+            'mcp-instruction.md',
+            'mcp-instructor.md',
+            'INSTRUCTION.md',
+            'INSTRUCTOR.md',
+            'instruction.md',
+            'instructor.md'
+        ];
+
+        let foundInstructorPath: string | null = null;
+        for (const fileName of instructionFiles) {
+            if (fs.existsSync(fileName)) {
+                foundInstructorPath = fileName;
+                break;
+            }
+        }
+
+        if (foundInstructorPath) {
+            console.log(chalk.green(`📖 Found ${foundInstructorPath}, using as project description...`));
             try {
-                finalDescription = fs.readFileSync(instructorPath, 'utf-8').trim();
-                console.log(chalk.dim(`   Loaded ${finalDescription.length} characters from instructor file`));
+                finalDescription = fs.readFileSync(foundInstructorPath, 'utf-8').trim();
+                console.log(chalk.dim(`   Loaded ${finalDescription.length} characters from instruction file`));
             } catch (error) {
-                console.log(chalk.yellow(`⚠️  Could not read ${instructorPath}, falling back to interactive input`));
+                console.log(chalk.yellow(`⚠️  Could not read ${foundInstructorPath}, falling back to interactive input`));
             }
         } else {
-            // Try to auto-generate project context if no description and no instructor file
-            console.log(chalk.yellow('🔍 No description provided and no mcp-instructor.md found.'));
+            // Try to auto-generate project context if no description and no instruction file
+            console.log(chalk.yellow('🔍 No description provided and no instruction file found.'));
+            console.log(chalk.yellow('   Looking for: mcp-instruction.md, mcp-instructor.md, etc.'));
             console.log(chalk.yellow('Analyzing existing project files to generate context...'));
 
             try {
@@ -70,7 +105,11 @@ export async function createProjectCommand(
                     await summarizeProject({
                         output: 'temp-project-summary.md',
                         budget: 0,
-                        verbose: true
+                        verbose: true,
+                        endpoint: options.endpoint,
+                        apiKey: options.apiKey,
+                        username: options.username,
+                        password: options.password
                     });
 
                     if (fs.existsSync('temp-project-summary.md')) {
@@ -79,8 +118,9 @@ export async function createProjectCommand(
                         await createMissingProjectFiles(process.cwd(), summaryContent, true);
 
                         // Use the generated instructor file
-                        if (fs.existsSync(instructorPath)) {
-                            finalDescription = fs.readFileSync(instructorPath, 'utf-8').trim();
+                        const generatedInstructorPath = 'mcp-instructor.md';
+                        if (fs.existsSync(generatedInstructorPath)) {
+                            finalDescription = fs.readFileSync(generatedInstructorPath, 'utf-8').trim();
                             console.log(chalk.green('📖 Generated and loaded mcp-instructor.md'));
                         }
 

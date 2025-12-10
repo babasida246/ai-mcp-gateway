@@ -24,8 +24,12 @@ export {
 export {
     buildContextForRequest,
     queueMessageEmbedding,
+    saveAssistantResponse,
     backfillConversationEmbeddings,
 } from './integration.js';
+
+// Utility functions
+export { chatContextUtils } from './utils.js';
 
 // Types
 export type {

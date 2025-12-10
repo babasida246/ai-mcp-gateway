@@ -32,7 +32,7 @@ const PROJECT_FILES = {
     sketch: ['SKETCH.md', 'sketch.md', 'project-sketch.md'],
     logicFlow: ['LOGIC_FLOW.md', 'logic-flow.md', 'logic_flow.md'],
     roadmap: ['ROADMAP.md', 'roadmap.md', 'project-roadmap.md'],
-    instructor: ['mcp-instructor.md', 'INSTRUCTOR.md', 'instructor.md'],
+    instructor: ['mcp-instruction.md', 'mcp-instructor.md', 'INSTRUCTOR.md', 'instructor.md', 'INSTRUCTION.md', 'instruction.md'],
     history: ['project-coding-history.md', 'HISTORY.md', 'history.md']
 };
 

@@ -11,6 +11,8 @@ class MetricsCollector {
     private totalOutputTokens = 0;
     private totalCost = 0;
     private requestDurations: number[] = [];
+    // Per-tool statistics (used by unified tool registry)
+    private toolStats: Map<string, { callCount: number; errorCount: number; totalDuration: number }> = new Map();
 
     /**
      * Record a new request
@@ -54,6 +56,33 @@ class MetricsCollector {
         if (this.requestDurations.length > 1000) {
             this.requestDurations.shift();
         }
+    }
+
+    /**
+     * Record execution metrics for a named tool
+     */
+    recordToolExecution(name: string, duration: number, success: boolean): void {
+        const prev = this.toolStats.get(name) || { callCount: 0, errorCount: 0, totalDuration: 0 };
+        prev.callCount += 1;
+        if (!success) prev.errorCount += 1;
+        prev.totalDuration += duration;
+        this.toolStats.set(name, prev);
+
+        // also track as a general duration
+        this.recordDuration(duration);
+    }
+
+    /**
+     * Get per-tool stats
+     */
+    getToolStats(name: string) {
+        const s = this.toolStats.get(name);
+        if (!s) return { callCount: 0, errorCount: 0, avgDuration: 0 };
+        return {
+            callCount: s.callCount,
+            errorCount: s.errorCount,
+            avgDuration: s.callCount > 0 ? s.totalDuration / s.callCount : 0,
+        };
     }
 
     /**

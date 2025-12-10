@@ -1,10 +1,10 @@
 services:
-  # AI MCP Gateway - API Server
-  ai-mcp-gateway:
+  # MCP Gateway - API Server
+  mcp-gateway:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ai-mcp-gateway
+    container_name: mcp-gateway
     restart: unless-stopped
     env_file:
       - .env.docker
@@ -51,7 +51,7 @@ services:
       
       # Logging
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      LOG_FILE: logs/ai-mcp-gateway.log
+      LOG_FILE: logs/mcp-gateway.log
       
       # Routing Configuration
       DEFAULT_LAYER: ${DEFAULT_LAYER:-L0}
@@ -118,7 +118,9 @@ services:
 
   # PostgreSQL Database
   postgres:
-    image: postgres:15-alpine
+    build:
+      context: .
+      dockerfile: docker/postgres/Dockerfile
     container_name: ai-mcp-postgres
     restart: unless-stopped
     ports:
@@ -170,7 +172,7 @@ services:
     ports:
       - "5173:80"
     depends_on:
-      - ai-mcp-gateway
+      - mcp-gateway
     networks:
       - ai-mcp-network
     environment:
@@ -180,6 +182,49 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # MCP Server (runs alongside the API in the same compose stack)
+  # This service uses the same image as the API server but starts the
+  # MCP server (stdio by default). Clients like Claude Desktop can
+  # either run the command locally to attach to stdio or connect to
+  # a WebSocket transport if implemented and exposed.
+  ai-mcp-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-mcp-mcp
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    # Run MCP server mode. By default this uses stdio transport.
+    # For WebSocket transport (experimental) you could set --transport websocket and expose port 3001.
+    # Use websocket transport by default in compose so other containers/hosts can connect
+    command: ["node", "dist/index.js", "mcp-serve", "--transport", "websocket", "--port", "${MCP_WEBSOCKET_PORT:-3001}"]
+    environment:
+      MODE: mcp
+      MCP_SERVER_NAME: mcp-gateway
+      MCP_SERVER_VERSION: 0.1.0
+      # Optional: expose a websocket port if your adapter implements it
+      MCP_WEBSOCKET_PORT: ${MCP_WEBSOCKET_PORT:-3001}
+      # Reuse same provider and DB settings from gateway
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_mcp_gateway}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${MCP_WEBSOCKET_PORT:-3001}:${MCP_WEBSOCKET_PORT:-3001}"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - ai-mcp-network
 
 networks:
   ai-mcp-network:

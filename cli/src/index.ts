@@ -24,6 +24,8 @@ import { analyzeCommand } from './commands/analyze.js';
 import { createProjectCommand } from './commands/create-project.js';
 import { claudeCommand } from './commands/claude.js';
 import { summarizeProject } from './commands/summarize.js';
+import { debugCommand } from './commands/debug.js';
+import { mcpServeCommand } from './commands/mcp-serve.js';
 
 const program = new Command();
 
@@ -35,7 +37,9 @@ program
 // Global options
 program
     .option('-e, --endpoint <url>', 'MCP server endpoint URL')
-    .option('-k, --api-key <key>', 'API authentication key');
+    .option('-k, --api-key <key>', 'API authentication key')
+    .option('-u, --username <username>', 'Admin username for authentication')
+    .option('-p, --password <password>', 'Admin password for authentication');
 
 // Chat command
 program
@@ -43,13 +47,21 @@ program
     .description('Chat with AI (interactive mode if no message provided)')
     .option('-i, --interactive', 'Force interactive mode')
     .option('--use-claude-code', 'Use Claude Code instead of multi-layer API')
+    .option('-a, --agent', 'Enable agent mode (Claude Code / Copilot-like)')
+    .option('--auto-execute', 'Auto-execute actions without confirmation')
+    .option('-b, --budget <number>', 'Budget for API calls', parseFloat)
     .action(async (message: string | undefined, options: Record<string, unknown>) => {
         const globalOpts = program.opts();
         await chatCommand(message, {
             endpoint: globalOpts.endpoint as string | undefined,
             apiKey: globalOpts.apiKey as string | undefined,
+            username: globalOpts.username as string | undefined,
+            password: globalOpts.password as string | undefined,
             interactive: options.interactive as boolean | undefined,
             useClaudeCode: options.useClaudeCode as boolean | undefined,
+            agent: options.agent as boolean | undefined,
+            autoExecute: options.autoExecute as boolean | undefined,
+            budget: options.budget as number | undefined,
         });
     });
 
@@ -63,6 +75,7 @@ program
     .option('--no-related', 'Skip related files analysis')
     .option('-c, --create', 'Create new code instead of analyzing existing file')
     .option('-o, --output <file>', 'Output file for generated code')
+    .option('--apply', 'Apply generated changes to disk')
     .option('--use-claude-code', 'Use Claude Code instead of multi-layer API')
     .action(async (arg: string, options: Record<string, unknown>) => {
         const globalOpts = program.opts() as Record<string, unknown>;
@@ -75,6 +88,7 @@ program
             related: options.related as boolean | undefined,
             create: options.create as boolean | undefined,
             output: options.output as string | undefined,
+            apply: options.apply as boolean | undefined,
             useClaudeCode: options.useClaudeCode as boolean | undefined,
         });
     });
@@ -92,6 +106,8 @@ program
             prompt: options.prompt as string | undefined,
             endpoint: globalOpts.endpoint as string | undefined,
             apiKey: globalOpts.apiKey as string | undefined,
+            username: globalOpts.username as string | undefined,
+            password: globalOpts.password as string | undefined,
             apply: options.apply as boolean | undefined,
             useClaudeCode: options.useClaudeCode as boolean | undefined,
         });
@@ -111,6 +127,8 @@ program
             prompt: options.prompt as string | undefined,
             endpoint: globalOpts.endpoint as string | undefined,
             apiKey: globalOpts.apiKey as string | undefined,
+            username: globalOpts.username as string | undefined,
+            password: globalOpts.password as string | undefined,
             maxFiles: parseInt(options.maxFiles as string),
             recursive: options.recursive as boolean | undefined,
             useClaudeCode: options.useClaudeCode as boolean | undefined,
@@ -119,8 +137,8 @@ program
 
 // Create Project command - AI-powered project scaffolding
 program
-    .command('create-project <description>')
-    .description('Create a complete project with AI (auto-structure, tests, CI/CD)')
+    .command('create-project [description]')
+    .description('Create a complete project with AI (auto-structure, tests, CI/CD). If no description provided, looks for mcp-instruction.md or mcp-instructor.md')
     .option('-o, --output <dir>', 'Output directory (default: auto-generated name)')
     .option('--no-install', 'Skip npm install')
     .option('--no-test', 'Skip initial test run')
@@ -130,11 +148,13 @@ program
     .option('--enable-test', 'Enable testing during generation')
     .option('--enable-debug', 'Enable debug mode')
     .option('--use-claude-code', 'Use Claude Code engine instead of multi-layer API')
-    .action(async (description: string, options: Record<string, unknown>) => {
+    .action(async (description: string | undefined, options: Record<string, unknown>) => {
         const globalOpts = program.opts() as Record<string, unknown>;
         await createProjectCommand(description, {
             endpoint: globalOpts.endpoint as string | undefined,
             apiKey: globalOpts.apiKey as string | undefined,
+            username: globalOpts.username as string | undefined,
+            password: globalOpts.password as string | undefined,
             output: options.output as string | undefined,
             budget: options.budget as number | undefined,
             maxLayer: options.maxLayer as string | undefined,
@@ -177,6 +197,52 @@ program
             budget: options.budget as number | undefined,
             model: options.model as string | undefined,
             verbose: options.verbose as boolean | undefined,
+            endpoint: globalOpts.endpoint as string | undefined,
+            apiKey: globalOpts.apiKey as string | undefined,
+            username: globalOpts.username as string | undefined,
+            password: globalOpts.password as string | undefined,
+        });
+    });
+
+// Debug command - Capture and analyze CLI output
+program
+    .command('debug <action>')
+    .description('Capture and analyze CLI output for debugging (capture|read|clear|analyze)')
+    .option('-o, --output <file>', 'Output file for captured data')
+    .option('-a, --append', 'Append to existing file instead of overwriting')
+    .option('-f, --format <type>', 'Output format: json, text, markdown (default: text)', 'text')
+    .option('-t, --include-timestamp', 'Include timestamp in output')
+    .option('-l, --max-lines <number>', 'Maximum lines to display when reading', parseInt)
+    .action(async (action: string, options: Record<string, unknown>) => {
+        const globalOpts = program.opts() as Record<string, unknown>;
+        await debugCommand(action, {
+            output: options.output as string | undefined,
+            append: options.append as boolean | undefined,
+            format: options.format as 'json' | 'text' | 'markdown' | undefined,
+            includeTimestamp: options.includeTimestamp as boolean | undefined,
+            maxLines: options.maxLines as number | undefined,
+            endpoint: globalOpts.endpoint as string | undefined,
+            apiKey: globalOpts.apiKey as string | undefined,
+            username: globalOpts.username as string | undefined,
+            password: globalOpts.password as string | undefined,
+        });
+    });
+
+// MCP Server command - Start MCP server for external clients
+program
+    .command('mcp-serve')
+    .description('Start MCP server for Claude Desktop, VSCode, or other MCP clients')
+    .option('-t, --transport <type>', 'Transport type: stdio, websocket (default: stdio)', 'stdio')
+    .option('-p, --port <number>', 'WebSocket port (default: 3001)', parseInt)
+    .option('-l, --log-level <level>', 'Log level: debug, info, warn, error (default: info)', 'info')
+    .action(async (options: Record<string, unknown>) => {
+        const globalOpts = program.opts() as Record<string, unknown>;
+        await mcpServeCommand({
+            transport: (options.transport as 'stdio' | 'websocket') || 'stdio',
+            port: (options.port as number) || 3001,
+            logLevel: (options.logLevel as 'debug' | 'info' | 'warn' | 'error') || 'info',
+            endpoint: globalOpts.endpoint as string | undefined,
+            apiKey: globalOpts.apiKey as string | undefined,
         });
     });
 
@@ -237,6 +303,14 @@ function printDetailedHelp(): void {
     console.log(chalk.white('  mcp diff <file> [-p "prompt"]'));
     console.log(chalk.dim('    Request AI to generate unified diff patch.\n'));
 
+    console.log(chalk.white('  mcp debug <action>'));
+    console.log(chalk.dim('    Capture and analyze CLI output for debugging.'));
+    console.log(chalk.dim('    Actions: capture, read, clear, analyze\n'));
+
+    console.log(chalk.white('  mcp mcp-serve'));
+    console.log(chalk.dim('    Start MCP server for Claude Desktop, VSCode, or other MCP clients.'));
+    console.log(chalk.dim('    Exposes AI routing, network tools, and ops tools via JSON-RPC.\n'));
+
     console.log(chalk.yellow('🔧 OPTIONS:\n'));
 
     console.log(chalk.white('  -e, --endpoint <url>'));
@@ -273,6 +347,9 @@ function printDetailedHelp(): void {
 
     console.log(chalk.green('  # Custom endpoint'));
     console.log(chalk.dim('  $ mcp --endpoint https://my-server.com chat "hello"\n'));
+
+    console.log(chalk.green('  # Start MCP server (for Claude Desktop config)'));
+    console.log(chalk.dim('  $ mcp mcp-serve --transport stdio\n'));
 
     console.log(chalk.yellow('🌍 ENVIRONMENT VARIABLES:\n'));
 

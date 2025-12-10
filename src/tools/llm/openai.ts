@@ -61,6 +61,27 @@ export class OpenAIClient implements LLMClient {
                 content: request.prompt,
             });
 
+            // Log full prompt for debugging
+            logger.info('[OpenAI] Sending prompt to model', {
+                model: model.apiModelName,
+                systemPrompt: request.systemPrompt ? request.systemPrompt.substring(0, 200) + '...' : 'none',
+                userPrompt: request.prompt.substring(0, 500) + (request.prompt.length > 500 ? '...' : ''),
+                fullPromptLength: request.prompt.length,
+                maxTokens: request.maxTokens || 4096,
+                temperature: request.temperature || 0.7,
+            });
+
+            // Log complete messages array for detailed debugging
+            logger.debug('[OpenAI] Complete messages array', {
+                messagesCount: messages.length,
+                messages: messages.map(m => ({
+                    role: m.role,
+                    contentPreview: typeof m.content === 'string'
+                        ? m.content.substring(0, 200) + (m.content.length > 200 ? '...' : '')
+                        : '[complex content]'
+                })),
+            });
+
             const response = await client.chat.completions.create({
                 model: model.apiModelName,
                 messages,
