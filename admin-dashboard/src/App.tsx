@@ -18,6 +18,7 @@ import WebTerminal from './pages/WebTerminal';
 import Chat from './pages/Chat';
 import McpTools from './pages/McpTools';
 import Backends from './pages/Backends';
+import Mikrotik from './pages/Mikrotik';
 
 function App() {
   const { authEnabled, isAuthenticated, loading, login, logout, user } = useAuthStatus();
@@ -70,6 +71,7 @@ function App() {
                   <Route path="/gpt-plus" element={<GPTPlus />} />
                   <Route path="/terminal" element={<WebTerminal />} />
                   <Route path="/mcp-tools" element={<McpTools />} />
+                  <Route path="/mikrotik" element={<Mikrotik />} />
                   <Route path="/backends" element={<Backends />} />
                   <Route path="/alerts" element={<Alerts />} />
                   <Route path="/settings" element={<Settings />} />

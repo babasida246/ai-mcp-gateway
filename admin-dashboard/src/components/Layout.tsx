@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Key, Terminal, Users, Cpu, Settings as SettingsIcon, Menu, X, BarChart3, Bell, Database, Zap, MessageSquare, SquareTerminal, MessagesSquare, LogOut, User, Wrench, Server } from 'lucide-react';
+import { LayoutDashboard, Key, Terminal, Users, Cpu, Settings as SettingsIcon, Menu, X, BarChart3, Bell, Database, Zap, MessageSquare, SquareTerminal, MessagesSquare, LogOut, User, Wrench, Server, Network } from 'lucide-react';
 
 interface LayoutProps {
   children: ReactNode;
@@ -24,6 +24,7 @@ const navigation = [
   { name: 'GPT Plus', href: '/gpt-plus', icon: MessageSquare },
   { name: 'Web Terminal', href: '/terminal', icon: SquareTerminal },
   { name: 'MCP Tools', href: '/mcp-tools', icon: Wrench },
+  { name: 'MikroTik', href: '/mikrotik', icon: Network },
   { name: 'Backends', href: '/backends', icon: Server },
   { name: 'Alerts', href: '/alerts', icon: Bell },
   { name: 'Settings', href: '/settings', icon: SettingsIcon },

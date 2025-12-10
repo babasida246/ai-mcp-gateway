@@ -11,6 +11,7 @@ Công cụ quản lý tập trung cấu hình thiết bị MikroTik RouterOS th�
 - ✅ Áp dụng nhóm lệnh với kiểm tra lỗi và rollback tự động
 - ✅ Lệnh chuẩn hóa dựa trên tài liệu MikroTik chính thức
 - ✅ Thiết lập DHCP, IP, Route, Firewall, DNS, NTP, SNMP
+- ✅ Cấu hình Bridge/VLAN, set access/trunk, enable/disable interface, MTU, bonding
 - ✅ Kiểm tra lệnh nguy hiểm trước khi thực thi
 - ✅ Hỗ trợ chạy lệnh tuần tự và song song
 
@@ -137,6 +138,36 @@ const results = await manager.ssh.execMulti([
 for (const [cmd, result] of Object.entries(results)) {
   console.log(`${cmd}: exit code ${result.exitCode}`);
 }
+```
+
+### 9. Bridge / Interface (VLAN, Access/Trunk, MTU)
+
+```typescript
+// Tạo bridge và bật vlan-filtering
+await manager.createBridge('br-lan', { vlanFiltering: true });
+
+// Thêm port vào bridge với PVID (access)
+await manager.addBridgePort('br-lan', 'ether2', { pvid: 10 });
+
+// Cấu hình VLAN: VLAN 10 untagged trên ether2, VLAN 20 tagged trên ether3
+await manager.configureBridgeVlan('br-lan', 10, [], ['ether2'], { enableFiltering: true });
+await manager.configureBridgeVlan('br-lan', 20, ['ether3']);
+
+// Đặt port access
+await manager.setAccessPort('br-lan', 'ether4', 30);
+
+// Đặt port trunk với nhiều VLAN tagged
+await manager.setTrunkPort('br-lan', 'ether5', [20, 30, 40]);
+
+// Bật/tắt interface
+await manager.setInterfaceState('ether6', true);   // enable
+await manager.setInterfaceState('ether6', false);  // disable
+
+// Chỉnh MTU
+await manager.setInterfaceMtu('ether7', 9000);
+
+// Bonding LACP
+await manager.createBonding('bond1', ['ether8', 'ether9'], '802.3ad');
 ```
 
 ## Lệnh Chuẩn Hóa (MIKROTIK_COMMANDS)
@@ -328,6 +359,12 @@ async function deployConfig() {
 - [MikroTik Official Documentation](https://help.mikrotik.com/docs/)
 - [MikroTik API Reference](https://wiki.mikrotik.com/wiki/Manual:API)
 - [RouterOS Command Reference](https://wiki.mikrotik.com/wiki/Manual:Command_Line_Interface)
+
+## Dashboard (admin-dashboard)
+
+- Trang mới: `/mikrotik` trong admin-dashboard (React) để sinh lệnh nhanh cho bridge/VLAN, access/trunk, enable/disable interface, MTU, bonding.
+- Các lệnh được hiển thị dưới dạng block, có nút Copy để dán vào RouterOS terminal.
+- Mục tiêu: giảm sai sót nhập lệnh thủ công, cung cấp preset cho VLAN filtering và trunk/access.
 
 ## Lưu Ý Bảo Mật
 
