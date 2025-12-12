@@ -1,0 +1,239 @@
+services:
+  # MCP Gateway - API Server
+  mcp-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mcp-gateway
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    ports:
+      - "3000:3000"
+    environment:
+      # Mode
+      MODE: api
+      
+      # API Configuration
+      API_PORT: 3000
+      API_HOST: 0.0.0.0
+      API_CORS_ORIGIN: "*"
+      
+      # LLM Provider API Keys (set your actual keys here)
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      
+      # OpenRouter Configuration
+      OPENROUTER_FALLBACK_MODELS: ${OPENROUTER_FALLBACK_MODELS:-x-ai/grok-beta,qwen/qwen-2.5-coder-32b-instruct,meta-llama/llama-3.1-8b-instruct:free}
+      OPENROUTER_REPLACE_OPENAI: ${OPENROUTER_REPLACE_OPENAI:-openai/gpt-4o-mini}
+      OPENROUTER_REPLACE_CLAUDE: ${OPENROUTER_REPLACE_CLAUDE:-anthropic/claude-3.5-sonnet}
+      
+      # OSS/Local Model (optional)
+      OSS_MODEL_ENABLED: ${OSS_MODEL_ENABLED:-false}
+      OSS_MODEL_ENDPOINT: ${OSS_MODEL_ENDPOINT:-http://localhost:11434}
+      OSS_MODEL_NAME: ${OSS_MODEL_NAME:-llama3:8b}
+      
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: 0
+      
+      # PostgreSQL Configuration
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_mcp_gateway}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-ai_mcp_gateway}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_SSL: false
+      
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FILE: logs/mcp-gateway.log
+      
+      # Routing Configuration
+      DEFAULT_LAYER: ${DEFAULT_LAYER:-L0}
+      ENABLE_CROSS_CHECK: ${ENABLE_CROSS_CHECK:-true}
+      ENABLE_AUTO_ESCALATE: ${ENABLE_AUTO_ESCALATE:-true}
+      MAX_ESCALATION_LAYER: ${MAX_ESCALATION_LAYER:-L2}
+      
+      # Layer Control (NEW!)
+      LAYER_L0_ENABLED: ${LAYER_L0_ENABLED:-true}
+      LAYER_L1_ENABLED: ${LAYER_L1_ENABLED:-true}
+      LAYER_L2_ENABLED: ${LAYER_L2_ENABLED:-true}
+      LAYER_L3_ENABLED: ${LAYER_L3_ENABLED:-true}
+      
+      # Task-Specific Models (NEW!)
+      CHAT_MODELS: ${CHAT_MODELS:-}
+      CODE_MODELS: ${CODE_MODELS:-}
+      ANALYZE_MODELS: ${ANALYZE_MODELS:-}
+      CREATE_PROJECT_MODELS: ${CREATE_PROJECT_MODELS:-}
+      
+      # Cost Tracking
+      ENABLE_COST_TRACKING: ${ENABLE_COST_TRACKING:-true}
+      COST_ALERT_THRESHOLD: ${COST_ALERT_THRESHOLD:-1.00}
+      
+      # MCP Server
+      MCP_SERVER_NAME: ai-mcp-gateway
+      MCP_SERVER_VERSION: 0.1.0
+    
+    volumes:
+      - ./logs:/app/logs
+    
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    
+    networks:
+      - ai-mcp-network
+    
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: ai-mcp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    networks:
+      - ai-mcp-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL Database
+  postgres:
+    build:
+      context: .
+      dockerfile: docker/postgres/Dockerfile
+    container_name: ai-mcp-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_mcp_gateway}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - ai-mcp-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Ollama (Optional - for local models)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ai-mcp-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - ai-mcp-network
+    profiles:
+      - with-ollama
+    # Uncomment if you have GPU
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Admin Dashboard (Web UI)
+  admin-dashboard:
+    build:
+      context: ./admin-dashboard
+      dockerfile: Dockerfile
+    container_name: ai-mcp-dashboard
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - mcp-gateway
+    networks:
+      - ai-mcp-network
+    environment:
+      - VITE_API_URL=http://localhost:3000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MCP Server (runs alongside the API in the same compose stack)
+  # This service uses the same image as the API server but starts the
+  # MCP server (stdio by default). Clients like Claude Desktop can
+  # either run the command locally to attach to stdio or connect to
+  # a WebSocket transport if implemented and exposed.
+  ai-mcp-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-mcp-mcp
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    # Run MCP server mode. By default this uses stdio transport.
+    # For WebSocket transport (experimental) you could set --transport websocket and expose port 3001.
+    # Use websocket transport by default in compose so other containers/hosts can connect
+    command: ["node", "dist/index.js", "mcp-serve", "--transport", "websocket", "--port", "${MCP_WEBSOCKET_PORT:-3001}"]
+    environment:
+      MODE: mcp
+      MCP_SERVER_NAME: mcp-gateway
+      MCP_SERVER_VERSION: 0.1.0
+      # Optional: expose a websocket port if your adapter implements it
+      MCP_WEBSOCKET_PORT: ${MCP_WEBSOCKET_PORT:-3001}
+      # Reuse same provider and DB settings from gateway
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_mcp_gateway}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${MCP_WEBSOCKET_PORT:-3001}:${MCP_WEBSOCKET_PORT:-3001}"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - ai-mcp-network
+
+networks:
+  ai-mcp-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+  ollama-data:
+    driver: local

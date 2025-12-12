@@ -1,0 +1,21 @@
+# Exclude source code
+../src/
+../*.ts
+../tsconfig.json
+../tsup.config.ts
+
+# Exclude dev files
+../node_modules/
+../.env
+../tests/
+../*.test.*
+../vitest.config.ts
+../playwright.config.ts
+
+# Include only production artifacts
+!bin/
+!dist-obfuscated/
+!config/
+!docs/
+!migrations/
+!README.md
