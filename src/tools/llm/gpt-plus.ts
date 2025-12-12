@@ -9,7 +9,6 @@
 
 import { logger } from '../../logging/logger.js';
 import { db } from '../../db/postgres.js';
-import { env } from '../../config/env.js';
 
 // Session storage interface
 interface GPTPlusSession {
@@ -165,7 +164,8 @@ class GPTPlusClient {
                 return { success: false, error: 'Invalid access token' };
             }
 
-            const userData = await response.json() as { email?: string; id?: string };
+            const userProfile = await response.json() as { email?: string; id?: string };
+            const resolvedEmail = userProfile.email || userEmail;
 
             // Check if user has Plus subscription (this might need adjustment based on API response)
             const isPremium = true; // We assume Plus since user is logging in for this purpose
@@ -183,7 +183,7 @@ class GPTPlusClient {
                     // Delete old sessions for this email
                     await client.query(
                         'DELETE FROM gpt_plus_sessions WHERE user_email = $1',
-                        [userEmail]
+                        [resolvedEmail]
                     );
 
                     // Insert new session
@@ -191,7 +191,7 @@ class GPTPlusClient {
                         `INSERT INTO gpt_plus_sessions 
                         (id, access_token, user_email, is_premium, expires_at) 
                         VALUES ($1, $2, $3, $4, $5)`,
-                        [sessionId, accessToken, userEmail, isPremium, expiresAt]
+                        [sessionId, accessToken, resolvedEmail, isPremium, expiresAt]
                     );
                 } finally {
                     client.release();
@@ -203,14 +203,14 @@ class GPTPlusClient {
                 id: sessionId,
                 accessToken,
                 expiresAt,
-                userEmail,
+                userEmail: resolvedEmail,
                 isPremium,
                 createdAt: new Date(),
                 updatedAt: new Date(),
             };
 
             logger.info('GPT Plus login successful', {
-                email: userEmail,
+                email: resolvedEmail,
                 expiresAt,
             });
 
@@ -271,6 +271,10 @@ class GPTPlusClient {
         const model = options?.model || 'gpt-4';
         const conversationId = options?.conversationId;
         const parentMessageId = options?.parentMessageId || crypto.randomUUID();
+        const accessToken = this.currentSession?.accessToken;
+        if (!accessToken) {
+            throw new Error('GPT Plus session missing access token');
+        }
 
         try {
             // Format the last user message for ChatGPT API
@@ -305,7 +309,7 @@ class GPTPlusClient {
             const response = await fetch(`${this.apiUrl}/conversation`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${this.currentSession!.accessToken}`,
+                    'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json',
                     'Accept': 'text/event-stream',
                 },

@@ -15,12 +15,8 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { logger } from '../../logging/logger.js';
-import ChatDeploymentHandler from './chatDeploymentHandler.js';
-import {
-    CommandGenerationContext,
-    CommandExecutionResult,
-    CommandConfirmation,
-} from './commandGeneration.js';
+import ChatDeploymentHandler from '../../services/chat/chatDeploymentHandler.js';
+import type { CommandGenerationResponse } from '../../services/chat/commandGeneration.js';
 
 const router = Router();
 const deploymentHandler = new ChatDeploymentHandler();
@@ -60,7 +56,7 @@ const ResultRequestSchema = z.object({
  */
 router.post('/check', async (req: Request, res: Response) => {
     try {
-        const { message, context } = CheckRequestSchema.parse(req.body);
+        const { message, context: _context } = CheckRequestSchema.parse(req.body);
 
         logger.info('[DeploymentAPI] Checking message for deployment request', {
             messageLength: message.length,
@@ -68,7 +64,7 @@ router.post('/check', async (req: Request, res: Response) => {
 
         const detection = await deploymentHandler.detectDeploymentRequest(message);
 
-        res.json({
+        return res.json({
             isDeploymentRequest: detection.isDeploymentRequest,
             taskType: detection.taskType,
             confidence: detection.confidence,
@@ -79,7 +75,7 @@ router.post('/check', async (req: Request, res: Response) => {
         logger.error('[DeploymentAPI] Check failed', {
             error: error instanceof Error ? error.message : String(error),
         });
-        res.status(400).json({
+        return res.status(400).json({
             error: 'Failed to check deployment request',
             details: error instanceof Error ? error.message : String(error),
         });
@@ -132,12 +128,12 @@ router.post('/generate', async (req: Request, res: Response) => {
             });
         }
 
-        res.json({
+        return res.json({
             generationId,
             sessionId: displayInfo.sessionId,
             taskDescription: response.taskDescription,
             commandCount: response.commands.length,
-            commands: response.commands.map(cmd => ({
+            commands: response.commands.map((cmd: CommandGenerationResponse['commands'][number]) => ({
                 id: cmd.id,
                 description: cmd.description,
                 riskLevel: cmd.riskLevel,
@@ -152,7 +148,7 @@ router.post('/generate', async (req: Request, res: Response) => {
         logger.error('[DeploymentAPI] Generate failed', {
             error: error instanceof Error ? error.message : String(error),
         });
-        res.status(400).json({
+        return res.status(400).json({
             error: 'Failed to generate deployment commands',
             details: error instanceof Error ? error.message : String(error),
         });
@@ -176,12 +172,12 @@ router.get('/:sessionId', (req: Request, res: Response) => {
             });
         }
 
-        res.json(session);
+        return res.json(session);
     } catch (error) {
         logger.error('[DeploymentAPI] Get session failed', {
             error: error instanceof Error ? error.message : String(error),
         });
-        res.status(500).json({
+        return res.status(500).json({
             error: 'Failed to retrieve session',
         });
     }
@@ -208,7 +204,7 @@ router.post('/:sessionId/confirm', async (req: Request, res: Response) => {
             selectedCommandIds
         );
 
-        res.json({
+        return res.json({
             approved: result.approved,
             sessionId: result.session.sessionId,
             status: result.session.status,
@@ -219,7 +215,7 @@ router.post('/:sessionId/confirm', async (req: Request, res: Response) => {
         logger.error('[DeploymentAPI] Confirmation failed', {
             error: error instanceof Error ? error.message : String(error),
         });
-        res.status(400).json({
+        return res.status(400).json({
             error: 'Failed to process confirmation',
             details: error instanceof Error ? error.message : String(error),
         });
@@ -256,7 +252,7 @@ router.post('/:sessionId/result', (req: Request, res: Response) => {
             });
         }
 
-        res.json({
+        return res.json({
             recorded: true,
             sessionId,
             commandId: result.commandId,
@@ -265,7 +261,7 @@ router.post('/:sessionId/result', (req: Request, res: Response) => {
         logger.error('[DeploymentAPI] Result recording failed', {
             error: error instanceof Error ? error.message : String(error),
         });
-        res.status(400).json({
+        return res.status(400).json({
             error: 'Failed to record result',
             details: error instanceof Error ? error.message : String(error),
         });
@@ -297,7 +293,7 @@ router.post('/:sessionId/finalize', (req: Request, res: Response) => {
 
         const resultsDisplay = deploymentHandler.getResultsDisplay(sessionId);
 
-        res.json({
+        return res.json({
             sessionId,
             status: finalSession.status,
             success,
@@ -309,7 +305,7 @@ router.post('/:sessionId/finalize', (req: Request, res: Response) => {
         logger.error('[DeploymentAPI] Finalize failed', {
             error: error instanceof Error ? error.message : String(error),
         });
-        res.status(500).json({
+        return res.status(500).json({
             error: 'Failed to finalize session',
         });
     }
@@ -334,7 +330,7 @@ router.get('/:sessionId/results', (req: Request, res: Response) => {
 
         const display = deploymentHandler.getResultsDisplay(sessionId);
 
-        res.json({
+        return res.json({
             sessionId,
             status: session.status,
             results: session.results,
@@ -349,7 +345,7 @@ router.get('/:sessionId/results', (req: Request, res: Response) => {
         logger.error('[DeploymentAPI] Results fetch failed', {
             error: error instanceof Error ? error.message : String(error),
         });
-        res.status(500).json({
+        return res.status(500).json({
             error: 'Failed to retrieve results',
         });
     }
@@ -378,7 +374,7 @@ router.delete('/:sessionId', (req: Request, res: Response) => {
             });
         }
 
-        res.json({
+        return res.json({
             cancelled: true,
             sessionId,
             message: 'Deployment cancelled',
@@ -387,7 +383,7 @@ router.delete('/:sessionId', (req: Request, res: Response) => {
         logger.error('[DeploymentAPI] Cancel failed', {
             error: error instanceof Error ? error.message : String(error),
         });
-        res.status(500).json({
+        return res.status(500).json({
             error: 'Failed to cancel deployment',
         });
     }

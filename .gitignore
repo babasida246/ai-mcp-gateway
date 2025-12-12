@@ -7,6 +7,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# Product release directory (tracked for git subtree)
+# product/ is intentionally NOT ignored - it contains the distributable artifacts
+
 # Environment
 .env
 .env.local

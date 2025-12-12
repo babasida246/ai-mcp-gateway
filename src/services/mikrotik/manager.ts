@@ -1,107 +1,9 @@
 import MikrotikSSH, { ExecResult } from './client.js';
+import { MIKROTIK_COMMANDS } from '../../lib/mikrotik/index.js';
+import * as builders from '../../lib/mikrotik/commands/builders.js';
+import type { BulkDeviceTarget, BulkApplyReport, VlanWizardOptions, DhcpQuickOptions, L2tpServerOptions, IpsecSiteToSiteOptions, SimpleQueueOptions, NetwatchOptions, BackupOptions } from '../../lib/mikrotik/types.js';
 
-/**
- * Standard MikroTik RouterOS commands based on official documentation.
- * Reference: https://help.mikrotik.com/docs/
- */
-
-export const MIKROTIK_COMMANDS = {
-    // System & Info
-    SYSTEM_IDENTITY: '/system identity print',
-    SYSTEM_RESOURCES: '/system resource print',
-    SYSTEM_PACKAGE_PRINT: '/system package print',
-    SYSTEM_LICENSE_PRINT: '/system license print',
-
-    // Backup & Restore
-    BACKUP_CREATE: (name: string) => `/system backup save name=${name}`,
-    BACKUP_LIST: '/file print where type=backup',
-    BACKUP_RESTORE: (name: string) => `/system backup load name=${name}`,
-    BACKUP_EXPORT: (name: string) => `/export file=${name}`,
-
-    // IP Configuration
-    IP_ADDRESS_LIST: '/ip address print detail',
-    IP_ADDRESS_ADD: (iface: string, address: string, netmask: string) =>
-        `/ip address add interface=${iface} address=${address}/${netmask}`,
-    IP_ADDRESS_REMOVE: (id: string) => `/ip address remove numbers=${id}`,
-    IP_ROUTE_LIST: '/ip route print detail',
-    IP_ROUTE_ADD: (dstAddress: string, gateway: string, distance: string = '1') =>
-        `/ip route add dst-address=${dstAddress} gateway=${gateway} distance=${distance}`,
-
-    // Interface Management
-    INTERFACE_LIST: '/interface print detail',
-    INTERFACE_ETHERNET_LIST: '/interface ethernet print detail',
-    INTERFACE_VLAN_ADD: (iface: string, vlanId: number, name: string) =>
-        `/interface vlan add interface=${iface} vlan-id=${vlanId} name=${name}`,
-    INTERFACE_BRIDGE_ADD: (name: string) => `/interface bridge add name=${name}`,
-    INTERFACE_BRIDGE_PORT_ADD: (bridge: string, iface: string) =>
-        `/interface bridge port add bridge=${bridge} interface=${iface}`,
-    INTERFACE_ENABLE: (iface: string) => `/interface set [find name=${iface}] disabled=no`,
-    INTERFACE_DISABLE: (iface: string) => `/interface set [find name=${iface}] disabled=yes`,
-    INTERFACE_SET_MTU: (iface: string, mtu: number) => `/interface set [find name=${iface}] mtu=${mtu}`,
-    INTERFACE_BONDING_ADD: (name: string, slaves: string[], mode: string = '802.3ad') =>
-        `/interface bonding add name=${name} slaves=${slaves.join(',')} mode=${mode}`,
-    BRIDGE_LIST: '/interface bridge print detail',
-    BRIDGE_PORT_LIST: '/interface bridge port print detail',
-    BRIDGE_VLAN_LIST: '/interface bridge vlan print detail',
-    BRIDGE_SET_VLAN_FILTERING: (bridge: string, enabled: boolean) =>
-        `/interface bridge set [find name=${bridge}] vlan-filtering=${enabled ? 'yes' : 'no'}`,
-    BRIDGE_VLAN_ADD: (bridge: string, vlanId: number | string, tagged: string[], untagged: string[] = []) =>
-        `/interface bridge vlan add bridge=${bridge} vlan-ids=${vlanId} tagged=${tagged.join(',')} untagged=${untagged.join(',')}`,
-    BRIDGE_VLAN_REMOVE: (numbers: string) => `/interface bridge vlan remove numbers=${numbers}`,
-    BRIDGE_PORT_SET_PVID: (iface: string, pvid: number) =>
-        `/interface bridge port set [find interface=${iface}] pvid=${pvid} frame-types=admit-only-untagged-and-priority-tagged`,
-    BRIDGE_PORT_SET_FRAME_TYPES: (iface: string, frameTypes: 'admit-all' | 'admit-only-untagged-and-priority-tagged' | 'admit-only-vlan-tagged') =>
-        `/interface bridge port set [find interface=${iface}] frame-types=${frameTypes}`,
-
-    // DHCP Server
-    DHCP_SERVER_ADD: (iface: string, pool: string) =>
-        `/ip dhcp-server add interface=${iface} address-pool=${pool} disabled=no`,
-    DHCP_SERVER_LIST: '/ip dhcp-server print detail',
-    DHCP_POOL_ADD: (name: string, rangeStart: string, rangeEnd: string) =>
-        `/ip pool add name=${name} ranges=${rangeStart}-${rangeEnd}`,
-    DHCP_POOL_LIST: '/ip pool print detail',
-    DHCP_NETWORK_ADD: (address: string, gateway: string, dnsServers: string[]) =>
-        `/ip dhcp-server network add address=${address} gateway=${gateway} dns-server=${dnsServers.join(',')}`,
-    DHCP_NETWORK_LIST: '/ip dhcp-server network print detail',
-
-    // DNS
-    DNS_SERVER_ADD: (address: string) => `/ip dns set servers=${address}`,
-    DNS_LIST: '/ip dns print',
-    DNS_CACHE_FLUSH: '/ip dns cache flush',
-
-    // Firewall
-    FIREWALL_NAT_LIST: '/ip firewall nat print detail',
-    FIREWALL_FILTER_LIST: '/ip firewall filter print detail',
-    FIREWALL_NAT_ADD: (chain: string, action: string, protocol?: string) =>
-        `/ip firewall nat add chain=${chain} action=${action}${protocol ? ` protocol=${protocol}` : ''}`,
-
-    // Users & Security
-    USER_LIST: '/user print detail',
-    USER_ADD: (username: string, password: string, group: string = 'full') =>
-        `/user add name=${username} password=${password} group=${group}`,
-    USER_REMOVE: (id: string) => `/user remove numbers=${id}`,
-
-    // Certificate Management
-    CERTIFICATE_LIST: '/certificate print detail',
-    CERTIFICATE_IMPORT: (name: string, filename: string) =>
-        `/certificate import file-name=${filename} name=${name}`,
-
-    // Logging
-    LOG_PRINT: '/log print follow=no numbers=0..100',
-    LOG_FILTER_ADD: (topics: string, action: string = 'memory') =>
-        `/system logging add topics=${topics} action=${action}`,
-
-    // NTP
-    NTP_CLIENT_ENABLE: '/system ntp client set enabled=yes',
-    NTP_CLIENT_SET_SERVER: (server: string) => `/system ntp client set servers=${server}`,
-    NTP_CLIENT_PRINT: '/system ntp client print',
-
-    // SNMP
-    SNMP_PRINT: '/snmp print',
-    SNMP_COMMUNITY_LIST: '/snmp community print detail',
-    SNMP_COMMUNITY_ADD: (name: string, addresses: string = '0.0.0.0/0') =>
-        `/snmp community add name=${name} addresses=${addresses}`,
-};
+export { MIKROTIK_COMMANDS };
 
 export type BackupConfig = {
     name: string;
@@ -153,7 +55,7 @@ export class MikrotikManager {
     /**
      * Get system information from the device.
      */
-    async getSystemInfo(): Promise<Record<string, any>> {
+    async getSystemInfo(): Promise<Record<string, unknown>> {
         const results = await this.ssh.execMulti([
             MIKROTIK_COMMANDS.SYSTEM_IDENTITY,
             MIKROTIK_COMMANDS.SYSTEM_RESOURCES,
@@ -524,6 +426,272 @@ export class MikrotikManager {
         ];
         return this.applyCommands(commands);
     }
+
+    /**
+     * VLAN wizard: create VLAN interface, add bridge-vlan, set IP, DHCP pool and dhcp-network
+     */
+    async createVlanNetwork(opts: VlanWizardOptions): Promise<ConfigApplyResult> {
+        try {
+            const dhcpPool = opts.dhcpPool || `${opts.poolStart}-${opts.poolEnd}`;
+            const commands = builders.buildVlanNetwork({ ...opts, dhcpPool });
+            return this.applyCommands(commands);
+        } catch (err) {
+            return {
+                success: false,
+                appliedCommands: 0,
+                failedCommands: 0,
+                errors: [err instanceof Error ? err.message : String(err)],
+            };
+        }
+    }
+
+    /**
+     * Apply a basic firewall template: block inbound from WAN, allow established, masquerade
+     */
+    async applyFirewallTemplate(wanIface: string, lanAddressOrBridge: string): Promise<ConfigApplyResult> {
+        if (!wanIface || !lanAddressOrBridge) {
+            return { success: false, appliedCommands: 0, failedCommands: 0, errors: ['missing parameters'] };
+        }
+        const commands = builders.buildFirewallTemplate(wanIface, lanAddressOrBridge);
+        return this.applyCommands(commands);
+    }
+
+    /**
+     * Add addresses to address-list and add a block rule
+     */
+    async addBlockAddressList(listName: string, addressesCsv: string, action: 'drop' | 'reject' = 'drop'): Promise<ConfigApplyResult> {
+        if (!listName || !addressesCsv) {
+            return { success: false, appliedCommands: 0, failedCommands: 0, errors: ['missing parameters'] };
+        }
+        const commands = builders.buildBlockAddressList(listName, addressesCsv, action);
+        return this.applyCommands(commands);
+    }
+
+    /**
+     * Force DNS via dst-nat for in-LAN traffic and set router DNS
+     */
+    async enforceDns(lanInterface: string, primary: string, secondary?: string): Promise<ConfigApplyResult> {
+        if (!lanInterface || !primary) {
+            return { success: false, appliedCommands: 0, failedCommands: 0, errors: ['missing parameters'] };
+        }
+        const commands = builders.buildDnsForce(lanInterface, primary, secondary);
+        return this.applyCommands(commands);
+    }
+
+    /**
+     * Quick DHCP setup: add pool, address, dhcp-server and network
+     */
+    async setupDhcpQuick(opts: DhcpQuickOptions): Promise<ConfigApplyResult> {
+        try {
+            const commands = builders.buildDhcpQuick(opts);
+            return this.applyCommands(commands);
+        } catch (err) {
+            return {
+                success: false,
+                appliedCommands: 0,
+                failedCommands: 0,
+                errors: [err instanceof Error ? err.message : String(err)],
+            };
+        }
+    }
+
+    /**
+     * Set timezone and NTP servers
+     */
+    async setTimeNtp(timezone: string, ntpPrimary: string, ntpSecondary?: string): Promise<ConfigApplyResult> {
+        if (!timezone || !ntpPrimary) {
+            return { success: false, appliedCommands: 0, failedCommands: 0, errors: ['missing parameters'] };
+        }
+        const commands = builders.buildTimeNtp(timezone, ntpPrimary, ntpSecondary);
+        return this.applyCommands(commands);
+    }
+
+    /**
+     * Configure identity and SNMP
+     */
+    async configureIdentitySnmp(identity: string, location: string | undefined, contact: string | undefined, community: string, trapTarget?: string): Promise<ConfigApplyResult> {
+        if (!identity || !community) {
+            return { success: false, appliedCommands: 0, failedCommands: 0, errors: ['missing parameters'] };
+        }
+        const commands = builders.buildIdentitySnmp(identity, location || 'datacenter', contact || 'noc', community, trapTarget);
+        return this.applyCommands(commands);
+    }
+
+    /**
+     * Configure L2TP server (basic) with ipsec
+     */
+    async setupL2tpServer(opts: { publicIp: string; poolRange: string; profileName: string; dns: string[]; secret: string; user: string; password: string }): Promise<ConfigApplyResult> {
+        const { publicIp, poolRange, profileName, dns, secret, user, password } = opts;
+        if (!publicIp || !poolRange || !profileName || !dns?.length || !secret || !user || !password) {
+            return { success: false, appliedCommands: 0, failedCommands: 0, errors: ['missing parameters'] };
+        }
+        const l2tpOpts: L2tpServerOptions = {
+            profile: profileName,
+            localAddress: publicIp,
+            remoteAddressPool: poolRange,
+            secret,
+            username: user,
+        };
+        const commands = builders.buildL2tpServer(l2tpOpts);
+        return this.applyCommands(commands);
+    }
+
+    /**
+     * Configure an IPsec site-to-site peer and policy (basic)
+     */
+    async setupIpsecSiteToSite(opts: { peerName: string; peerIp: string; localId?: string; localSubnet: string; remoteSubnet: string; preSharedKey: string }): Promise<ConfigApplyResult> {
+        const { peerName, peerIp, localSubnet, remoteSubnet, preSharedKey } = opts;
+        if (!peerName || !peerIp || !localSubnet || !remoteSubnet || !preSharedKey) {
+            return { success: false, appliedCommands: 0, failedCommands: 0, errors: ['missing parameters'] };
+        }
+        const ipsecOpts: IpsecSiteToSiteOptions = {
+            peerAddress: peerIp,
+            psk: preSharedKey,
+            localSubnet,
+            remoteSubnet,
+        };
+        const commands = builders.buildIpsecSiteToSite(ipsecOpts);
+        return this.applyCommands(commands);
+    }
+
+    /**
+     * Configure remote syslog
+     */
+    async configureSyslog(remoteIp: string, port = 514, topics = 'info'): Promise<ConfigApplyResult> {
+        if (!remoteIp) {
+            return { success: false, appliedCommands: 0, failedCommands: 0, errors: ['missing parameters'] };
+        }
+        const commands = builders.buildSyslogRemote(remoteIp, port, topics);
+        return this.applyCommands(commands);
+    }
+
+    /**
+     * Add a netwatch rule
+     */
+    async addNetwatch(host: string, interval = '00:00:30', downScript?: string, upScript?: string): Promise<ConfigApplyResult> {
+        if (!host) {
+            return { success: false, appliedCommands: 0, failedCommands: 0, errors: ['missing host'] };
+        }
+        const opts: NetwatchOptions = { host, interval, downScript, upScript };
+        const commands = builders.buildNetwatch(opts);
+        return this.applyCommands(commands);
+    }
+
+    /**
+     * Create a backup and optionally upload via scp
+     */
+    async createBackupRemote(filename: string, scpUser?: string, scpHost?: string, scpPath?: string): Promise<ConfigApplyResult> {
+        if (!filename) {
+            return { success: false, appliedCommands: 0, failedCommands: 0, errors: ['missing filename'] };
+        }
+        const uploadTo = scpUser && scpHost && scpPath ? `scp://${scpUser}@${scpHost}${scpPath}` : undefined;
+        const opts: BackupOptions = { name: filename, uploadTo };
+        const commands = builders.buildBackup(opts);
+        return this.applyCommands(commands);
+    }
+
+    /**
+     * Add simple queue for single IP
+     */
+    async addSimpleQueueIp(name: string, targetIp: string, maxUp: string, maxDown: string, _limitAtUp?: string, _limitAtDown?: string): Promise<ConfigApplyResult> {
+        if (!name || !targetIp || !maxUp || !maxDown) {
+            return { success: false, appliedCommands: 0, failedCommands: 0, errors: ['missing parameters'] };
+        }
+        const opts: SimpleQueueOptions = { name, target: targetIp, maxUpload: maxUp, maxDownload: maxDown };
+        const commands = builders.buildSimpleQueue(opts);
+        return this.applyCommands(commands);
+    }
+
+    /**
+     * Add simple queue for subnet
+     */
+    async addSimpleQueueSubnet(name: string, subnet: string, maxUp: string, maxDown: string): Promise<ConfigApplyResult> {
+        if (!name || !subnet || !maxUp || !maxDown) {
+            return { success: false, appliedCommands: 0, failedCommands: 0, errors: ['missing parameters'] };
+        }
+        const opts: SimpleQueueOptions = { name, target: subnet, maxUpload: maxUp, maxDownload: maxDown };
+        const commands = builders.buildSimpleQueue(opts);
+        return this.applyCommands(commands);
+    }
+
+    /**
+     * Run ping and traceroute via ssh return ExecResult map
+     */
+    async runToolkit(target: string, count = 4, size = 64): Promise<Record<string, ExecResult>> {
+        const commands = builders.buildToolkit(target, count, size);
+        const ping = await this.ssh.exec(commands[0]);
+        const tracer = await this.ssh.exec(commands[1]);
+        return { ping, tracer } as Record<string, ExecResult>;
+    }
+
+    /**
+     * Run torch on device (returns ExecResult)
+     */
+    async runTorch(interfaceName: string, port?: string, ip?: string): Promise<ExecResult> {
+        if (!interfaceName) throw new Error('interface required');
+        const params = [`interface=${interfaceName}`];
+        if (port) params.push(`port=${port}`);
+        if (ip) params.push(`ip-address=${ip}`);
+        return this.ssh.exec(`/tool torch ${params.join(' ')}`);
+    }
+
+    /**
+     * Disable selected services
+     */
+    async disableServices(opts: { www?: boolean; telnet?: boolean; ssh?: boolean; ftp?: boolean; api?: boolean; apiSsl?: boolean }): Promise<ConfigApplyResult> {
+        if (!Object.values(opts).some(v => v)) {
+            return { success: false, appliedCommands: 0, failedCommands: 0, errors: ['no services selected'] };
+        }
+        const normalizedOpts = { ...opts, apissl: opts.apiSsl };
+        const commands = builders.buildDisableServices(normalizedOpts);
+        return this.applyCommands(commands);
+    }
+
+    /**
+     * Install brute-force protection firewall rules for SSH/Winbox
+     */
+    async enableBruteForceProtection(sshPort = 22, winboxPort = 8291, threshold = 5, blockTimeout = '1h'): Promise<ConfigApplyResult> {
+        const commands = builders.buildBruteForceProtection(sshPort, winboxPort, threshold, blockTimeout);
+        return this.applyCommands(commands);
+    }
+}
+
+/**
+ * Apply the same command set to multiple MikroTik devices sequentially.
+ */
+export async function applyCommandsBulk(
+    targets: BulkDeviceTarget[],
+    commands: string[],
+    options?: { rollbackOnError?: boolean; dryRun?: boolean }
+): Promise<BulkApplyReport[]> {
+    const reports: BulkApplyReport[] = [];
+    if (!targets.length || !commands.length) return reports;
+
+    for (const target of targets) {
+        const manager = new MikrotikManager(target.deviceId || target.host);
+        try {
+            await manager.connect(target.host, target.username, target.password, target.port ?? 22);
+            const result = await manager.applyCommands(commands, {
+                rollbackOnError: options?.rollbackOnError,
+                dryRun: options?.dryRun,
+            });
+            reports.push({ device: target.host, success: result.success, result });
+        } catch (err) {
+            reports.push({
+                device: target.host,
+                success: false,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        } finally {
+            try {
+                await manager.disconnect();
+            } catch {
+                // ignore disconnect errors to continue other devices
+            }
+        }
+    }
+
+    return reports;
 }
 
 export default MikrotikManager;

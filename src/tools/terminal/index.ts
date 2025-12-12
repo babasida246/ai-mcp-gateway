@@ -4,7 +4,7 @@
  */
 
 import { spawn, ChildProcess } from 'child_process';
-import { Client as SSHClient } from 'ssh2';
+import { Client as SSHClient, type ConnectConfig } from 'ssh2';
 import { Socket } from 'net';
 import { EventEmitter } from 'events';
 import { logger } from '../../logging/logger.js';
@@ -213,7 +213,7 @@ class TerminalSessionManager extends EventEmitter {
             });
 
             // Connect
-            const connectConfig: any = {
+            const connectConfig: ConnectConfig = {
                 host: options.host,
                 port: options.port || 22,
                 username: options.username,

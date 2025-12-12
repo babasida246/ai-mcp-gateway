@@ -4,7 +4,7 @@ import { OpenAIClient } from './openai.js';
 import { OpenRouterClient } from './openrouter.js';
 import { OSSLocalClient } from './oss-local.js';
 import { LLMRequest, LLMResponse } from '../../mcp/types.js';
-import { ModelConfig, ModelProvider } from '../../config/models.js';
+import { ModelConfig } from '../../config/models.js';
 import { env } from '../../config/env.js';
 import { logger } from '../../logging/logger.js';
 import { metrics } from '../../logging/metrics.js';

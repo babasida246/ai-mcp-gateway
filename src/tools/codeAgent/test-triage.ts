@@ -148,7 +148,10 @@ function groupRelatedFailures(
         if (!groups.has(key)) {
             groups.set(key, []);
         }
-        groups.get(key)!.push(testName);
+        const list = groups.get(key);
+        if (list) {
+            list.push(testName);
+        }
     }
 
     return groups;

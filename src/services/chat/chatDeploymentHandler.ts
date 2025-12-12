@@ -21,7 +21,6 @@ import {
 } from './commandGeneration.js';
 import {
     CommandExecutionManager,
-    buildConfirmationPrompt,
     formatExecutionResults,
     type ExecutionSession,
 } from './commandExecution.js';

@@ -8,14 +8,12 @@ import ChatDeploymentHandler, {
     buildDeploymentChatResponse,
 } from '../chatDeploymentHandler.js';
 import {
-    generateCommands,
     validateCommands,
     formatCommandsForDisplay,
     CommandGenerationResponse,
 } from '../commandGeneration.js';
 import {
     CommandExecutionManager,
-    buildConfirmationPrompt,
     formatExecutionResults,
 } from '../commandExecution.js';
 
@@ -371,8 +369,8 @@ describe('Chat Deployment Integration', () => {
     describe('User Confirmation Handling', () => {
         it('should handle approval', async () => {
             const message = 'Deploy DHCP';
-            const detection = await handler.detectDeploymentRequest(message);
-            const { response } = await handler.generateDeploymentCommands(message, {
+            await handler.detectDeploymentRequest(message);
+            await handler.generateDeploymentCommands(message, {
                 isDeploymentRequest: true,
                 taskType: 'dhcp',
                 confidence: 0.9,
@@ -391,7 +389,7 @@ describe('Chat Deployment Integration', () => {
 
         it('should handle rejection', async () => {
             const message = 'Deploy DHCP';
-            const { response } = await handler.generateDeploymentCommands(message, {
+            await handler.generateDeploymentCommands(message, {
                 isDeploymentRequest: true,
                 taskType: 'dhcp',
                 confidence: 0.9,

@@ -10,6 +10,8 @@
     },
     "scripts": {
         "build": "tsup",
+        "build:prod": "tsup && node scripts/postbuild-obfuscate.js",
+        "build:product": "node scripts/build-product.js",
         "dev": "tsup --watch",
         "start": "node dist/index.js",
         "start:api": "MODE=api node dist/index.js",
@@ -56,8 +58,8 @@
         "ssh2": "^1.17.0",
         "uuid": "^13.0.0",
         "winston": "^3.14.2",
-        "zod": "^3.25.76",
-        "ws": "^8.13.0"
+        "ws": "^8.13.0",
+        "zod": "^3.25.76"
     },
     "devDependencies": {
         "@playwright/test": "^1.48.0",
@@ -69,15 +71,29 @@
         "@typescript-eslint/eslint-plugin": "^8.0.0",
         "@typescript-eslint/parser": "^8.0.0",
         "@vitest/ui": "^2.1.1",
+        "@yao-pkg/pkg": "^5.16.1",
         "eslint": "^9.9.0",
+        "javascript-obfuscator": "^4.2.2",
         "prettier": "^3.3.3",
+        "supertest": "^6.3.3",
         "tsup": "^8.2.3",
         "tsx": "^4.21.0",
         "typescript": "^5.5.3",
-        "vitest": "^2.1.1",
-        "supertest": "^6.3.3"
+        "vitest": "^2.1.1"
     },
     "engines": {
         "node": ">=20.0.0"
+    },
+    "pkg": {
+        "assets": [
+            "dist/instructions.md",
+            "dist/tools/**/*"
+        ],
+        "targets": [
+            "node20-win-x64",
+            "node20-linux-x64",
+            "node20-macos-x64"
+        ],
+        "outputPath": "product/bin"
     }
 }

@@ -1,68 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Check, Copy, Network, PlugZap, Shield, SlidersHorizontal } from 'lucide-react';
-
-function buildBridgeCommand(name: string, vlanFiltering: boolean) {
-  const cmds = [`/interface bridge add name=${name}`];
-  if (vlanFiltering) cmds.push(`/interface bridge set [find name=${name}] vlan-filtering=yes`);
-  return cmds;
-}
-
-function buildAccessCommands(bridge: string, iface: string, vlan: number) {
-  return [
-    `/interface bridge port add bridge=${bridge} interface=${iface}`,
-    `/interface bridge port set [find interface=${iface}] pvid=${vlan} frame-types=admit-only-untagged-and-priority-tagged`,
-    `/interface bridge vlan add bridge=${bridge} vlan-ids=${vlan} untagged=${iface}`,
-  ];
-}
-
-function buildTrunkCommands(bridge: string, iface: string, vlans: number[]) {
-  const base = [
-    `/interface bridge port add bridge=${bridge} interface=${iface}`,
-    `/interface bridge port set [find interface=${iface}] frame-types=admit-only-vlan-tagged`,
-  ];
-  const vlanCmds = vlans.map((v) => `/interface bridge vlan add bridge=${bridge} vlan-ids=${v} tagged=${iface}`);
-  return [...base, ...vlanCmds];
-}
-
-function buildInterfaceState(iface: string, enabled: boolean) {
-  return [`/interface set [find name=${iface}] disabled=${enabled ? 'no' : 'yes'}`];
-}
-
-function buildMtu(iface: string, mtu: number) {
-  return [`/interface set [find name=${iface}] mtu=${mtu}`];
-}
-
-function buildBonding(name: string, slaves: string, mode: string) {
-  const normalized = slaves.split(',').map((s) => s.trim()).filter(Boolean).join(',');
-  return [`/interface bonding add name=${name} slaves=${normalized} mode=${mode || '802.3ad'}`];
-}
-
-function CommandBlock({ title, commands }: { title: string; commands: string[] }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(commands.join('\n'));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1200);
-  };
-
-  return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-lg">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-semibold text-white">{title}</h3>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-2 text-xs px-2 py-1 rounded-md bg-slate-700 text-slate-200 hover:bg-blue-600 hover:text-white transition-colors"
-        >
-          {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} Copy
-        </button>
-      </div>
-      <pre className="text-xs text-slate-200 bg-slate-900 rounded-lg p-3 whitespace-pre-wrap leading-5">
-        {commands.join('\n')}
-      </pre>
-    </div>
-  );
-}
+import { Network, PlugZap, Shield, SlidersHorizontal } from 'lucide-react';
+import CommandBlock from '../components/mikrotik/CommandBlock';
+import {
+  buildBridge,
+  buildAccessPort,
+  buildTrunkPort,
+  buildInterfaceState,
+  buildMtu,
+  buildBonding,
+} from '../lib/mikrotik/builders';
 
 export default function MikrotikPage() {
   const [bridgeName, setBridgeName] = useState('br-lan');
@@ -86,11 +32,11 @@ export default function MikrotikPage() {
   const [bondSlaves, setBondSlaves] = useState('ether7,ether8');
   const [bondMode, setBondMode] = useState('802.3ad');
 
-  const bridgeCmds = useMemo(() => buildBridgeCommand(bridgeName, vlanFiltering), [bridgeName, vlanFiltering]);
-  const accessCmds = useMemo(() => buildAccessCommands(accessBridge, accessIface, accessVlan), [accessBridge, accessIface, accessVlan]);
+  const bridgeCmds = useMemo(() => buildBridge(bridgeName, vlanFiltering), [bridgeName, vlanFiltering]);
+  const accessCmds = useMemo(() => buildAccessPort(accessBridge, accessIface, accessVlan), [accessBridge, accessIface, accessVlan]);
   const trunkCmds = useMemo(() => {
     const vlanList = trunkVlans.split(',').map((v) => Number(v.trim())).filter((v) => !Number.isNaN(v));
-    return buildTrunkCommands(trunkBridge, trunkIface, vlanList);
+    return buildTrunkPort(trunkBridge, trunkIface, vlanList);
   }, [trunkBridge, trunkIface, trunkVlans]);
   const stateCmds = useMemo(() => buildInterfaceState(ifaceStateName, ifaceEnabled), [ifaceStateName, ifaceEnabled]);
   const mtuCmds = useMemo(() => buildMtu(mtuIface, mtuValue), [mtuIface, mtuValue]);

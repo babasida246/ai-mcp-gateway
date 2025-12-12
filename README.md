@@ -18,6 +18,35 @@ See `docs/FEATURE_SUMMARY.md` for a concise feature overview.
 
 ---
 
+## Production Build
+
+Build a production-ready release with minified, obfuscated code and standalone binaries:
+
+```powershell
+npm run build:product
+```
+
+This creates a `product/` directory containing:
+- **Standalone binaries** (Windows, Linux, macOS) - no Node.js required
+- **Obfuscated JavaScript** - minified and protected fallback
+- **Essential configs and docs** - deployment-ready package
+
+The product directory excludes source code and can be deployed independently. See `product/README.md` for deployment instructions.
+
+### Git Subtree Release
+
+Create a separate release branch without source code:
+
+```powershell
+# Create product release branch
+node scripts/setup-subtree.js
+
+# Push to separate repository
+node scripts/setup-subtree.js push product-repo main
+```
+
+---
+
 ## Quick Start
 
 Docker (recommended):
