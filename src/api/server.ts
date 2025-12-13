@@ -19,6 +19,8 @@ import { createProviderRoutes } from './providers.js';
 import { createOpenRouterRoutes } from './openrouter.js';
 import { createAgentRoutes } from './agents.js';
 import { createAdminRoutes } from './admin.js';
+import configRoutes from './routes/config.js';
+import deploymentsRoutes from './routes/deployments.js';
 import {
     buildContextForRequest,
     queueMessageEmbedding,
@@ -165,6 +167,16 @@ export class APIServer {
 
         // Admin routes for MCP tools settings and backend configurations
         this.app.use('/v1/admin', createAdminRoutes());
+
+        // Configuration management routes (database-backed config)
+        this.app.use('/v1/config', configRoutes);
+
+        // Deployment workflow routes (command generation, sessions, confirmations)
+        this.app.use('/v1/deployments', deploymentsRoutes);
+
+        // MikroTik Command Builder routes (facts, plan, compile, validate, apply)
+        const mikrotikRoutes = (await import('./routes/mikrotik.js')).default;
+        this.app.use('/v1/mikrotik', mikrotikRoutes);
 
         // Health check
         this.app.get('/health', async (_req, res) => {

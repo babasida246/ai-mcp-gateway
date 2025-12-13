@@ -98,7 +98,7 @@ export class OpenRouterClient implements LLMClient {
                 body: JSON.stringify({
                     model: model.apiModelName,
                     messages,
-                    max_tokens: request.maxTokens || 4096,
+                    ...(request.maxTokens ? { max_tokens: request.maxTokens } : {}),
                     temperature: request.temperature || 0.7,
                 }),
             });

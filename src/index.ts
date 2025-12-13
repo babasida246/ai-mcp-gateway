@@ -62,6 +62,8 @@ const { redisCache } = await import('./cache/redis.js');
 const { logger } = await import('./logging/logger.js');
 const { selfImprovement } = await import('./improvement/manager.js');
 const { providerManager } = await import('./config/provider-manager.js');
+const { configService } = await import('./services/config/index.js');
+const { bootstrapDB } = await import('./db/bootstrap.js');
 
 /**
  * Main application bootstrap function.
@@ -79,6 +81,24 @@ const { providerManager } = await import('./config/provider-manager.js');
  */
 async function main() {
     try {
+        // Initialize database and configuration service
+        try {
+            await bootstrapDB.initialize();
+            await configService.initialize();
+            logger.info('Configuration service initialized from database');
+        } catch (error) {
+            if (error instanceof Error && error.message.includes('Bootstrap configuration not found')) {
+                console.error('\n❌ No configuration found!');
+                console.error('Error details:');
+                console.error(error.message);
+                console.error('\nRun setup first: npm run setup:config\n');
+                process.exit(1);
+            }
+            logger.warn('ConfigService initialization failed, continuing with .env fallback', {
+                error: error instanceof Error ? error.message : 'Unknown',
+            });
+        }
+
         // Initialize self-improvement tables
         await selfImprovement.initializeTables();
 

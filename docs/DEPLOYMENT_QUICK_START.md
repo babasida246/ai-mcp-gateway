@@ -1,437 +1,485 @@
-# 🚀 Chat-Based Deployment Quick Start Guide
+# AI MCP Gateway - Quick Start Deployment Guide
 
-## Setup Steps
+Complete guide to deploy AI MCP Gateway using Docker in under 5 minutes.
 
-### 1. Save Device Connection
+---
 
-First, save your target device connection in the Web Terminal:
+## 📋 Prerequisites
 
-```bash
-# Via Web UI:
-1. Go to Web Terminal
-2. Click "SSH" tab
-3. Enter device details:
-   - Host: 172.251.96.200
-   - Port: 22
-   - Username: admin
-   - Password or Private Key
-4. Click "Save Connection for Later"
-5. Name: "MikroTik-Core-01"
+- **Docker** 20.10+ & **Docker Compose** 2.0+
+- **At least one LLM provider API key**:
+  - [OpenRouter](https://openrouter.ai) (recommended - supports all providers)
+  - [OpenAI](https://platform.openai.com/)
+  - [Anthropic](https://console.anthropic.com/)
+
+### Generate Encryption Key
+
+```powershell
+# PowerShell
+-join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | ForEach-Object {[char]$_})
+
+# Or use any 32-character string
 ```
 
-Or via API:
-```bash
-curl -X POST http://localhost:3000/v1/terminal/connections \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "MikroTik-Core-01",
-    "type": "ssh",
-    "host": "172.251.96.200",
-    "port": 22,
-    "username": "admin",
-    "password": "your-password",
-    "auth_type": "password"
-  }'
+---
+
+## 🚀 Quick Deploy (5 Minutes)
+
+### Step 1: Clone Repository
+
+```powershell
+git clone https://github.com/babasida246/ai-mcp-gateway.git
+cd ai-mcp-gateway
 ```
 
-### 2. Enable Deployment Feature
+### Step 2: Configure Environment
 
-Set environment variable:
-```bash
-export ENABLE_DEPLOYMENTS=true
+```powershell
+copy .env.docker.example .env.docker
 ```
 
-Or in `.env`:
-```
-ENABLE_DEPLOYMENTS=true
-DEPLOYMENT_LLM_PROVIDER=openai
-DEPLOYMENT_COMMAND_TIMEOUT=30000
+Edit `.env.docker` with your API keys:
+
+```env
+# ============================================
+# REQUIRED: Provider API Keys
+# ============================================
+OPENROUTER_API_KEY=sk-or-v1-your-key-here
+
+# Optional - if you have direct API keys
+OPENAI_API_KEY=sk-your-openai-key-here
+ANTHROPIC_API_KEY=sk-ant-your-anthropic-key-here
+
+# ============================================
+# REQUIRED: Encryption Key (32 characters)
+# ============================================
+CONFIG_ENCRYPTION_KEY=your-32-character-encryption-key
+
+# ============================================
+# Optional: Customize Models
+# ============================================
+OPENROUTER_FALLBACK_MODELS=meta-llama/llama-3.3-70b-instruct:free,x-ai/grok-4.1-fast:free
+
+# ============================================
+# Database (defaults work for Docker)
+# ============================================
+POSTGRES_DB=ai_mcp_gateway
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
 ```
 
-### 3. Start the Gateway
+### Step 3: Start Services
 
-```bash
-npm start
-# or
+```powershell
 docker-compose up -d
 ```
 
-## Basic Workflow
+Output:
+```
+✅ Container ai-mcp-postgres   Healthy
+✅ Container ai-mcp-redis      Healthy  
+✅ Container mcp-gateway       Healthy
+✅ Container ai-mcp-dashboard  Healthy
+```
 
-### Step 1: Send Deployment Request
+### Step 4: Verify Deployment
+
+```powershell
+# Check health
+curl http://localhost:3000/health
+
+# Check container status
+docker-compose ps
+```
+
+Expected output:
+```
+NAME               STATUS
+mcp-gateway        Up (healthy)
+ai-mcp-dashboard   Up (healthy)
+ai-mcp-postgres    Up (healthy)
+ai-mcp-redis       Up (healthy)
+```
+
+### Step 5: Access Services
+
+- **Admin Dashboard**: http://localhost:5173
+- **Settings UI**: http://localhost:5173/settings
+- **API Gateway**: http://localhost:3000
+- **API Docs**: http://localhost:3000/v1/status
+
+---
+
+## ⚙️ Initial Configuration
+
+### 1. Open Settings UI
+
+Navigate to: http://localhost:5173/settings
+
+### 2. Configure System Settings
+
+**Tab: System Config**
+- Set default layer (L0, L1, L2, L3)
+- Enable auto-escalation
+- Set cost tracking threshold
+- Configure CORS and logging
+
+### 3. Add Provider Credentials
+
+**Tab: Provider Credentials**
+
+Click "Add Provider" and enter:
+- **Provider**: OpenRouter / OpenAI / Anthropic
+- **API Key**: Your provider API key
+- **Endpoint**: API endpoint URL
+- **Enabled**: ✅ Checked
+
+**Example:**
+```
+Provider: OpenRouter
+API Key: sk-or-v1-8fb01e8bb...
+Endpoint: https://openrouter.ai/api/v1
+Enabled: ✅
+```
+
+Credentials are **AES-256 encrypted** in PostgreSQL.
+
+### 4. Configure Layers
+
+**Tab: Layer Configuration**
+
+Assign models to layers:
+
+**L0 (Free):**
+- meta-llama/llama-3.3-70b-instruct:free
+- x-ai/grok-4.1-fast:free
+
+**L1 (Cheap):**
+- google/gemini-flash-1.5
+- openai/gpt-4o-mini
+
+**L2 (Balanced):**
+- anthropic/claude-3-haiku
+- openai/gpt-4o
+
+**L3 (Premium):**
+- anthropic/claude-3.5-sonnet
+- openai/o1-preview
+
+### 5. Configure Task Routing
+
+**Tab: Task Configuration**
+
+Set preferred models for tasks:
+
+**Chat Task:**
+- Preferred: meta-llama/llama-3.3-70b-instruct:free
+- Fallback: google/gemini-flash-1.5, openai/gpt-4o-mini
+
+**Code Task:**
+- Preferred: qwen/qwen-2.5-coder-32b-instruct:free
+- Fallback: deepseek/deepseek-coder-33b-instruct:free
+
+**Analyze Task:**
+- Preferred: qwen/qwq-32b-preview:free
+- Fallback: x-ai/grok-4.1-fast:free
+
+### 6. Enable Features
+
+**Tab: Feature Flags**
+
+Enable desired features:
+- ✅ **Auto-escalate** - Automatically try next layer on failure
+- ✅ **Cross-check** - Validate responses with multiple models
+- ✅ **Cost tracking** - Track and alert on costs
+
+---
+
+## 🧪 Test Your Deployment
+
+### 1. Health Check
 
 ```bash
-# Via Chat API
-curl -X POST http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messages": [
-      {
-        "role": "user",
-        "content": "Deploy DHCP on 172.251.96.200 with pool 172.251.96.100-200"
-      }
-    ]
-  }'
-```
-
-Or in Web UI Chat:
-```
-User: Deploy DHCP on 172.251.96.200 with pool 172.251.96.100-200 and DNS 8.8.8.8
-```
-
-### Step 2: System Detects & Generates Commands
-
-The system will:
-1. Detect this is a DHCP deployment request
-2. Generate appropriate commands
-3. Present them for your review
-
-### Step 3: Review Commands
-
-```
-📋 DEPLOYMENT PLAN: Deploy DHCP on 172.251.96.200
-
-COMMANDS (3 total):
-────────────────────────────────
-
-1. [MEDIUM] Create DHCP pool for address range
-   Command: /ip/pool/add name=default-pool ranges=172.251.96.100-172.251.96.200
-
-2. [MEDIUM] Configure DHCP network with gateway and DNS
-   Command: /ip/dhcp-server/network/add address=172.251.96.0/24 ...
-
-3. [HIGH] Enable DHCP server on interface
-   Command: /ip/dhcp-server/add interface=ether1 ...
-
-⚠️ WARNINGS:
-- Existing DHCP configuration will be replaced
-- All clients will need to renew their leases
-
-Estimated Duration: 5s
-```
-
-### Step 4: Approve or Reject
-
-User response options:
-
-**Option A: Approve all**
-```
-User: ✅ Approve All
-```
-
-**Option B: Reject deployment**
-```
-User: ❌ Reject
-```
-
-**Option C: Edit selection** (approve only specific commands)
-```
-User: ✏️ Execute only commands 1 and 2
-```
-
-### Step 5: Execution
-
-System executes the approved commands:
-
-```
-🚀 Executing Deployment
-Starting command execution on 172.251.96.200...
-Commands: 3
-
-[Executing command 1/3...]
-[Executing command 2/3...]
-[Executing command 3/3...]
-```
-
-### Step 6: Results
-
-```
-✅ EXECUTION RESULTS
-
-Status: COMPLETED
-Device: 172.251.96.200
-Duration: 4.23s
-
-1. ✅ Create DHCP pool
-   Duration: 125ms
-   Output: IP pool "default-pool" added successfully
-
-2. ✅ Configure DHCP network
-   Duration: 230ms
-   Output: DHCP network configuration added
-
-3. ✅ Enable DHCP server
-   Duration: 145ms
-   Output: DHCP server started and listening
-
-✅ Deployment completed successfully!
-All 3 commands executed without errors.
-```
-
-## Usage Examples
-
-### Example 1: Deploy DHCP
-
-```
-User: Deploy DHCP on 172.251.96.200 with IP pool 172.251.96.100-200, gateway 172.251.96.1, and DNS 8.8.8.8
-
-[System generates 3 commands]
-
-User: ✅ Approve All
-
-[System executes commands]
-
-System: ✅ Deployment completed! DHCP is now running.
-```
-
-### Example 2: Configure DNS
-
-```
-User: Add DNS records for example.com pointing to 10.0.0.5 and cdn.example.com pointing to 10.0.0.10
-
-[System generates DNS record commands]
-
-User: ✏️ Execute only the first record
-
-[System executes selected command]
-
-System: ✅ DNS record for example.com has been created.
-```
-
-### Example 3: Firewall Rules
-
-```
-User: Configure firewall rules to block SSH (port 22) from the internet on 192.168.1.1
-
-[System generates firewall rules]
-
-User: ✅ Approve All
-
-[System executes rules]
-
-System: ✅ Firewall rules have been applied. SSH is now blocked from internet traffic.
-```
-
-### Example 4: VLAN Setup
-
-```
-User: Create VLAN 100 for management network on the core switch with IP 10.100.0.1/24
-
-[System generates VLAN commands]
-
-User: ✅ Approve All
-
-[System executes commands]
-
-System: ✅ VLAN 100 has been created with management interface.
-```
-
-## API Integration Examples
-
-### Using the Deployment API Directly
-
-#### 1. Check if message is a deployment request
-```bash
-curl -X POST http://localhost:3000/v1/deployments/check \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "Deploy DHCP on 172.251.96.200"
-  }'
+curl http://localhost:3000/health
 ```
 
 Response:
 ```json
 {
-  "isDeploymentRequest": true,
-  "taskType": "dhcp",
-  "targetDevice": "172.251.96.200",
-  "confidence": 0.95
-}
-```
-
-#### 2. Generate deployment commands
-```bash
-curl -X POST http://localhost:3000/v1/deployments/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "Deploy DHCP on 172.251.96.200",
-    "taskType": "dhcp",
-    "targetDevice": "172.251.96.200",
-    "connectionId": "conn_abc123"
-  }'
-```
-
-Response:
-```json
-{
-  "generationId": "gen_1733754000000_abc123",
-  "sessionId": "exec_1733754000000_def456",
-  "taskDescription": "Deploy DHCP on 172.251.96.200",
-  "commandCount": 3,
-  "commands": [
-    {
-      "id": "cmd_001",
-      "description": "Create DHCP pool",
-      "riskLevel": "medium"
-    }
-  ],
-  "explanation": "This deployment will...",
-  "warnings": ["Existing DHCP config will be replaced"],
-  "affectedServices": ["DHCP", "Network connectivity"],
-  "estimatedDuration": 5
-}
-```
-
-#### 3. Approve deployment
-```bash
-curl -X POST http://localhost:3000/v1/deployments/exec_1733754000000_def456/confirm \
-  -H "Content-Type: application/json" \
-  -d '{
-    "approved": true,
-    "selectedCommandIds": ["cmd_001", "cmd_002", "cmd_003"]
-  }'
-```
-
-#### 4. Record command result
-```bash
-curl -X POST http://localhost:3000/v1/deployments/exec_1733754000000_def456/result \
-  -H "Content-Type: application/json" \
-  -d '{
-    "commandId": "cmd_001",
-    "success": true,
-    "stdout": "IP pool default-pool added",
-    "exitCode": 0,
-    "duration": 125
-  }'
-```
-
-#### 5. Finalize execution
-```bash
-curl -X POST http://localhost:3000/v1/deployments/exec_1733754000000_def456/finalize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "success": true
-  }'
-```
-
-#### 6. Get results
-```bash
-curl http://localhost:3000/v1/deployments/exec_1733754000000_def456/results
-```
-
-Response:
-```json
-{
-  "sessionId": "exec_1733754000000_def456",
-  "status": "completed",
-  "results": [
-    {
-      "commandId": "cmd_001",
-      "success": true,
-      "stdout": "Pool created",
-      "duration": 125,
-      "timestamp": "2025-12-09T15:44:36Z"
-    }
-  ],
-  "summary": {
-    "totalCommands": 3,
-    "executedCommands": 3,
-    "successCount": 3
+  "status": "healthy",
+  "version": "0.1.0",
+  "services": {
+    "database": "connected",
+    "redis": "connected"
   }
 }
 ```
 
-## Supported Deployment Types
+### 2. Chat Completion (OpenAI Compatible)
 
-### DHCP Configuration
-```
-Deploy DHCP on <device> with pool <range> [gateway <ip>] [dns <ips>]
-
-Example:
-"Deploy DHCP on 172.251.96.200 with pool 172.251.96.100-200, gateway 172.251.96.1"
-```
-
-### DNS Management
-```
-Add DNS record <name> pointing to <ip> [with type <A|AAAA|CNAME>]
-
-Example:
-"Add DNS record example.com pointing to 10.0.0.5"
+```bash
+curl -X POST http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
 ```
 
-### Firewall Rules
-```
-Configure firewall to [block|allow] <protocol> port <port> from <source> [to <dest>]
+### 3. Task-Specific Request
 
-Example:
-"Block SSH port 22 from internet"
-```
-
-### VLAN Configuration
-```
-Create VLAN <id> [for <purpose>] [with subnet <ip/mask>]
-
-Example:
-"Create VLAN 100 for management with subnet 10.100.0.0/24"
+```bash
+curl -X POST http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Write a Python function"}],
+    "metadata": {"task": "code"}
+  }'
 ```
 
-### Routing
+This automatically uses **Code Task** routing with code-specialized models.
+
+### 4. Check Request in Dashboard
+
+Open: http://localhost:5173
+
+You'll see:
+- Request count
+- Token usage
+- Costs
+- Model used
+- Response time
+
+---
+
+## 📊 Container Services
+
+### Service Overview
+
+| Service | Container Name | Port | Purpose |
+|---------|---------------|------|---------|
+| API Gateway | mcp-gateway | 3000 | Main API server |
+| Admin Dashboard | ai-mcp-dashboard | 5173 | Web UI |
+| PostgreSQL | ai-mcp-postgres | 5432 | Database |
+| Redis | ai-mcp-redis | 6379 | Cache |
+
+### Container Management
+
+```powershell
+# View logs
+docker-compose logs mcp-gateway
+docker-compose logs ai-mcp-dashboard
+
+# Restart service
+docker-compose restart mcp-gateway
+
+# Stop all services
+docker-compose down
+
+# Start services
+docker-compose up -d
+
+# View container status
+docker-compose ps
 ```
-Add route to <destination> via <gateway> [with metric <value>]
 
-Example:
-"Add route to 192.168.100.0/24 via 10.0.0.1"
+---
+
+## 🔧 Environment Variables Reference
+
+### Required Variables
+
+```env
+# Database Bootstrap (required for Docker)
+DB_HOST=postgres
+DB_PORT=5432
+DB_NAME=ai_mcp_gateway
+DB_USER=postgres
+DB_PASSWORD=postgres
+CONFIG_ENCRYPTION_KEY=your-32-char-key-here
+
+# At least one provider API key
+OPENROUTER_API_KEY=sk-or-v1-...
+# OR
+OPENAI_API_KEY=sk-...
+# OR
+ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-## Troubleshooting
+### Optional Variables
 
-### "Message does not appear to be a deployment request"
-- Use more specific keywords (e.g., "deploy", "configure", "setup")
-- Include IP address or device name
-- Specify task type clearly (DHCP, DNS, firewall, etc.)
+```env
+# API Server
+API_PORT=3000
+API_HOST=0.0.0.0
+API_CORS_ORIGIN=*
 
-### "Session not found"
-- Verify session ID is correct
-- Session may have expired (24-hour cleanup)
-- Create a new deployment request
+# Logging
+LOG_LEVEL=info
+LOG_FILE=logs/mcp-gateway.log
 
-### Connection failed
-- Verify device is reachable from gateway
-- Check saved connection credentials
-- Ensure correct IP/hostname
+# Routing
+DEFAULT_LAYER=L0
+ENABLE_AUTO_ESCALATE=true
+MAX_ESCALATION_LAYER=L2
 
-### Commands not generating
-- Check LLM provider is configured
-- Verify API key is valid
-- Try simpler request message
+# Cost Control
+ENABLE_COST_TRACKING=true
+COST_ALERT_THRESHOLD=1.00
 
-### Execution timeout
-- Increase `DEPLOYMENT_COMMAND_TIMEOUT` environment variable
-- Check device responsiveness
-- Reduce number of commands
+# Layer Control
+LAYER_L0_ENABLED=true
+LAYER_L1_ENABLED=true
+LAYER_L2_ENABLED=true
+LAYER_L3_ENABLED=true
 
-## Security Best Practices
+# Task Models
+CHAT_MODELS=meta-llama/llama-3.3-70b-instruct:free
+CODE_MODELS=qwen/qwen-2.5-coder-32b-instruct:free
+ANALYZE_MODELS=qwen/qwq-32b-preview:free
+```
 
-1. **Always review commands before approving** - Understand what will be executed
-2. **Use SSH over Telnet** - More secure connection
-3. **Limit user permissions** - Only deploy to authorized devices
-4. **Keep credentials secure** - Use SSH keys when possible
-5. **Enable audit logging** - Track all deployments
-6. **Test in staging first** - Validate in non-production environment
-7. **Have rollback plans** - Know how to undo changes
+---
 
-## Getting Help
+## 🐛 Troubleshooting
 
-For issues or questions:
+### Container Won't Start
 
-1. Check the logs: `docker-compose logs mcp-gateway`
-2. Review documentation: `/docs/DEPLOYMENT_VIA_CHAT.md`
-3. Check API responses for error details
-4. Test with simpler deployment requests first
+**Check logs:**
+```powershell
+docker-compose logs mcp-gateway
+```
 
-## See Also
+**Common issues:**
 
-- [Full Deployment Documentation](./DEPLOYMENT_VIA_CHAT.md)
-- [Web Terminal Guide](../admin-dashboard/WebTerminal.md)
-- [Chat System Architecture](./CHAT_CONTEXT_OPTIMIZATION.md)
-- [API Reference](./API-GUIDE.md)
+1. **Missing CONFIG_ENCRYPTION_KEY**
+   ```
+   Error: Bootstrap configuration not found
+   Environment status: { CONFIG_ENCRYPTION_KEY: false }
+   ```
+   **Fix:** Add CONFIG_ENCRYPTION_KEY to docker-compose.yml environment section
+
+2. **Database not ready**
+   ```
+   Error: Database connection failed
+   ```
+   **Fix:** Wait for postgres container to be healthy:
+   ```powershell
+   docker-compose ps | Select-String postgres
+   ```
+
+3. **Port already in use**
+   ```
+   Error: bind: address already in use
+   ```
+   **Fix:** Change ports in docker-compose.yml or stop conflicting services
+
+### Configuration Not Saving
+
+**Verify ConfigService:**
+```powershell
+docker-compose logs mcp-gateway | Select-String "Configuration service"
+```
+
+**Expected:**
+```
+Configuration service initialized from database
+```
+
+**If not initialized:**
+1. Check database connection
+2. Verify CONFIG_ENCRYPTION_KEY is set
+3. Check database migrations ran
+
+### Dashboard Can't Connect to API
+
+**Check CORS settings:**
+
+Edit docker-compose.yml:
+```yaml
+environment:
+  API_CORS_ORIGIN: "*"  # Allow all origins
+  # Or specific origin:
+  # API_CORS_ORIGIN: "http://localhost:5173"
+```
+
+**Restart services:**
+```powershell
+docker-compose restart mcp-gateway
+```
+
+### Provider API Key Not Working
+
+**Test provider directly:**
+```bash
+curl https://openrouter.ai/api/v1/models \
+  -H "Authorization: Bearer sk-or-v1-YOUR-KEY"
+```
+
+**Check key in Settings UI:**
+1. Go to http://localhost:5173/settings
+2. Tab: Provider Credentials
+3. Verify API key is correct and provider is enabled
+
+---
+
+## 🔐 Security Best Practices
+
+### Production Deployment
+
+1. **Use Strong Encryption Key**
+   ```powershell
+   # Generate secure 32-char key
+   -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | ForEach-Object {[char]$_})
+   ```
+
+2. **Set Strong Database Password**
+   ```env
+   POSTGRES_PASSWORD=your-strong-password-here
+   ```
+
+3. **Restrict CORS**
+   ```env
+   API_CORS_ORIGIN=https://your-domain.com
+   ```
+
+4. **Use HTTPS**
+   - Deploy behind reverse proxy (nginx, Traefik)
+   - Enable SSL/TLS
+   - Use Let's Encrypt for certificates
+
+5. **Never Commit Secrets**
+   ```bash
+   # Add to .gitignore
+   .env
+   .env.docker
+   .env.local
+   ```
+
+---
+
+## ✅ Deployment Checklist
+
+- [ ] Docker & Docker Compose installed
+- [ ] Generated 32-character encryption key
+- [ ] Obtained at least one provider API key (OpenRouter recommended)
+- [ ] Configured `.env.docker` with API keys and encryption key
+- [ ] Started services with `docker-compose up -d`
+- [ ] Verified all containers healthy
+- [ ] Accessed Settings UI at http://localhost:5173/settings
+- [ ] Configured provider credentials
+- [ ] Set up layer assignments
+- [ ] Configured task routing
+- [ ] Enabled feature flags
+- [ ] Tested API with sample request
+- [ ] Verified request appears in dashboard
+- [ ] Reviewed logs for any errors
+- [ ] Set up backups (database & environment)
+- [ ] Documented custom configuration
+
+---
+
+**Deployment complete! 🎉**
+
+Your AI MCP Gateway is now running and ready to route requests across multiple LLM providers with intelligent layer-based routing.

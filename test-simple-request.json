@@ -1,0 +1,19 @@
+{
+    "intent": "Set system identity to MyRouter and enable NTP",
+    "deviceId": "test-device-02",
+    "facts": {
+        "model": "RB750",
+        "routeros": "7.16",
+        "interfaces": [
+            {
+                "name": "ether1",
+                "type": "ether"
+            }
+        ],
+        "bridges": [],
+        "ipAddresses": []
+    },
+    "selectedModules": [
+        "system"
+    ]
+}

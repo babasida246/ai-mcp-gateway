@@ -1,411 +1,473 @@
 # AI MCP Gateway
 
-Model Context Protocol (MCP) server and AI gateway that orchestrates multiple models with layered routing, budget controls, and an admin dashboard.
+Model Context Protocol (MCP) server and AI gateway that orchestrates multiple models with layered routing, database-driven configuration, and an admin dashboard.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-19-blue)](https://react.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-This repository provides:
+## Features
 
-- An HTTP API gateway (Express) that routes requests to LLM providers using an N-layer, priority-based router.
-- A standalone MCP server implementation so MCP-aware clients (Claude Desktop, VS Code) can connect directly.
-- A developer CLI (`mcp`) for code generation, analysis, and gateway management.
-- A React-based Admin Dashboard for real-time monitoring and provider/model management.
+- **HTTP API Gateway** - Express server with N-layer, priority-based routing
+- **Database-driven Configuration** - All settings stored in PostgreSQL
+- **Admin Dashboard** - React-based web UI for monitoring and management
+- **Settings UI** - Complete interface for system, providers, layers, tasks, and features
+- **MCP Server Mode** - Standalone MCP server for Claude Desktop, VS Code
 
-See `docs/FEATURE_SUMMARY.md` for a concise feature overview.
-
----
-
-## Production Build
-
-Build a production-ready release with minified, obfuscated code and standalone binaries:
-
-```powershell
-npm run build:product
-```
-
-This creates a `product/` directory containing:
-- **Standalone binaries** (Windows, Linux, macOS) - no Node.js required
-- **Obfuscated JavaScript** - minified and protected fallback
-- **Essential configs and docs** - deployment-ready package
-
-The product directory excludes source code and can be deployed independently. See `product/README.md` for deployment instructions.
-
-### Git Subtree Release
-
-Create a separate release branch without source code:
-
-```powershell
-# Create product release branch
-node scripts/setup-subtree.js
-
-# Push to separate repository
-node scripts/setup-subtree.js push product-repo main
-```
+See [`docs/FEATURE_SUMMARY.md`](docs/FEATURE_SUMMARY.md) for complete feature list.
 
 ---
 
-## Quick Start
+## 🚀 Quick Start (Docker)
 
-Docker (recommended):
+### Prerequisites
+- Docker & Docker Compose
+- At least one LLM provider API key (OpenRouter recommended)
+
+### 1. Clone & Configure
 
 ```powershell
 git clone https://github.com/babasida246/ai-mcp-gateway.git
 cd ai-mcp-gateway
 copy .env.docker.example .env.docker
-# Edit .env.docker with provider API keys (OPENROUTER_API_KEY, OPENAI_API_KEY, ...)
-docker-compose --env-file .env.docker up -d
-
-# Gateway API:     http://localhost:3000
-# Admin Dashboard: http://localhost:5173
 ```
 
-Local development:
+### 2. Edit `.env.docker`
+
+Add your API keys:
+```env
+OPENROUTER_API_KEY=sk-or-v1-your-key-here
+# Optional: OPENAI_API_KEY, ANTHROPIC_API_KEY
+```
+
+### 3. Start Services
 
 ```powershell
-npm install
-copy .env.example .env
-# Edit .env with API keys and DB settings
-npm run build
-npm run start:api     # start API server
-# or
-npm run start:mcp     # start MCP server
+docker-compose up -d
 ```
 
----
+### 4. Access Services
 
-## Core Concepts
+- **API Gateway**: http://localhost:3000
+- **Admin Dashboard**: http://localhost:5173
+- **Settings UI**: http://localhost:5173/settings
+- **Health Check**: http://localhost:3000/health
 
-- N-layer routing: requests try cheaper/free models first (L0 → L3) and escalate only when necessary.
-- Priority selection: models within a layer are ordered by priority and chosen deterministically.
-- Budget enforcement: per-project budgets limit model escalation and track costs.
-- MCP tools: the gateway exposes MCP tools for chat, code, network ops, and more.
-
-For a short feature summary, open `docs/FEATURE_SUMMARY.md`.
-## 📖 CLI Usage
-
-The gateway includes a powerful CLI tool:
-
-```bash
-# Show help
-ai-mcp-gateway --help
-
-# Check gateway status
-ai-mcp-gateway status
-
-# List all models by layer
-ai-mcp-gateway models list
-
-# View model details
-ai-mcp-gateway models info <model-id>
-
-# List providers
-ai-mcp-gateway providers
-
-# Check database status
-ai-mcp-gateway db status
-
-# View/modify configuration
-ai-mcp-gateway config show
-ai-mcp-gateway config set <key> <value>
-```
-
----
-
-## 🔗 MCP Server Mode
-
-The gateway can run as a standalone MCP server that Claude Desktop, VS Code, and other MCP clients can connect to directly.
-
-### Starting the MCP Server
-
-```bash
-# Start with default stdio transport
-mcp mcp-serve
-
-# Start with debug logging
-mcp mcp-serve --log-level debug
-
-# With custom gateway endpoint (for AI routing)
-mcp mcp-serve --endpoint http://localhost:3000 --api-key your-key
-```
-
-### Available MCP Tools
-
-| Tool | Description |
-|------|-------------|
-| `ai.chat_router` | Route chat messages through N-layer architecture (L0→L3) for cost optimization |
-| `ai.code_agent` | Generate or analyze code with full context awareness |
-| `net.fw_log_search` | Search and analyze firewall logs |
-| `net.topology_scan` | Scan and visualize network topology |
-| `net.mikrotik_api` | Execute MikroTik RouterOS API commands |
-| `ops.cost_report` | Generate cost reports for AI usage |
-| `ops.trace_session` | Trace and debug AI request sessions |
-
-### Claude Desktop Configuration
-
-Add to `claude_desktop_config.json`:
-
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`  
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "ai-mcp-gateway": {
-      "command": "npx",
-      "args": ["-y", "@ai-mcp-gateway/cli", "mcp-serve"],
-      "env": {
-        "MCP_ENDPOINT": "http://localhost:3000",
-        "MCP_LOG_LEVEL": "info"
-      }
-    }
-  }
-}
-```
-
-Or if installed globally:
-
-```json
-{
-  "mcpServers": {
-    "ai-mcp-gateway": {
-      "command": "mcp",
-      "args": ["mcp-serve"]
-    }
-  }
-}
-```
-
-### VS Code MCP Configuration
-
-Add to your VS Code `settings.json`:
-
-```json
-{
-  "mcp.servers": {
-    "ai-mcp-gateway": {
-      "command": "npx",
-      "args": ["-y", "@ai-mcp-gateway/cli", "mcp-serve"]
-    }
-  }
-}
-```
-
-### Tool Usage Examples
-
-Once connected, you can use the tools in Claude:
+### Running Services
 
 ```
-# Route a chat message through the gateway
-Use ai.chat_router to ask: "Explain the difference between REST and GraphQL"
-
-# Analyze code
-Use ai.code_agent to review my index.ts file and suggest improvements
-
-# Search firewall logs
-Use net.fw_log_search to find blocked connections in the last hour
-
-# Get cost report
-Use ops.cost_report to show my AI usage costs for this month
-```
-
----
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        AI MCP Gateway                            │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │   HTTP API  │  │  MCP Server │  │         CLI             │  │
-│  │  (Express)  │  │   (stdio)   │  │   (status/models/...)   │  │
-│  └──────┬──────┘  └──────┬──────┘  └───────────┬─────────────┘  │
-│         │                │                      │                │
-│         └────────────────┼──────────────────────┘                │
-│                          ▼                                       │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │                    Router (N-Layer)                        │  │
-│  │  L0 (Free) → L1 (Cheap) → L2 (Standard) → L3 (Premium)    │  │
-│  │  Priority-based selection within each layer                │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                          │                                       │
-│  ┌───────────────────────┼───────────────────────────────────┐  │
-│  │                  LLM Providers                             │  │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐  │  │
-│  │  │OpenRouter│ │ OpenAI   │ │Anthropic │ │ OSS Local    │  │  │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────────┘  │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                          │                                       │
-│  ┌───────────────────────┼───────────────────────────────────┐  │
-│  │                   Data Layer                               │  │
-│  │  ┌──────────────┐  ┌─────────────────────────────────┐    │  │
-│  │  │    Redis     │  │          PostgreSQL             │    │  │
-│  │  │   (Cache)    │  │  (Models, Config, Analytics)    │    │  │
-│  │  └──────────────┘  └─────────────────────────────────┘    │  │
-│  └───────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                     Admin Dashboard (React)                      │
-│  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌──────────────┐   │
-│  │Overview│ │Models  │ │Providers│ │Alerts │ │ Web Terminal │   │
-│  └────────┘ └────────┘ └────────┘ └────────┘ └──────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 🔌 API Endpoints
-
-### Health & Status
-```
-GET  /health              # Gateway health check
-GET  /v1/models/layers    # List models by layer
-```
-
-### Chat Completion
-```
-POST /v1/chat/completions # OpenAI-compatible chat endpoint
-```
-
-### Model Management
-```
-GET  /v1/models           # List all models
-POST /v1/models           # Add new model
-PUT  /v1/models/:id       # Update model
-```
-
-### Terminal (Web Terminal)
-```
-POST /v1/terminal/sessions        # Create terminal session
-GET  /v1/terminal/sessions        # List sessions
-POST /v1/terminal/:id/execute     # Execute command (local)
-POST /v1/terminal/:id/send        # Send data (SSH/Telnet)
+✅ mcp-gateway       - Main API server (port 3000)
+✅ ai-mcp-dashboard  - Web UI (port 5173)
+✅ ai-mcp-postgres   - PostgreSQL database (port 5432)
+✅ ai-mcp-redis      - Redis cache (port 6379)
 ```
 
 ---
 
 ## ⚙️ Configuration
 
-### Environment Variables
+All configuration managed through **Settings UI** at http://localhost:5173/settings
 
-```env
-# Mode (api or mcp)
-MODE=api
+### Settings Tabs
 
-# Database
-DATABASE_URL=postgresql://user:pass@localhost:5432/mcpgateway
+#### 1. System Config
+- API settings (port, host, CORS)
+- Logging configuration
+- Cost tracking thresholds
+- Default layer, auto-escalation
 
-# Redis (optional, for caching)
-REDIS_URL=redis://localhost:6379
+#### 2. Provider Credentials
+- Manage API keys (OpenRouter, OpenAI, Anthropic)
+- Enable/disable providers
+- Configure API endpoints
+- **Encrypted storage** in PostgreSQL
 
-# LLM Providers (add keys for providers you want to use)
-OPENROUTER_API_KEY=sk-or-...
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
+#### 3. Layer Configuration
+- **L0** (Free) - Free models (Llama, Grok)
+- **L1** (Cheap) - Affordable models (GPT-4o-mini, Gemini)
+- **L2** (Balanced) - Claude Haiku, GPT-4o
+- **L3** (Premium) - Claude Sonnet, o1-preview
+- Enable/disable layers, set priorities
 
-# Routing
-DEFAULT_LAYER=L0
-ENABLE_CROSS_CHECK=true
-MAX_ESCALATION_LAYER=L3
+#### 4. Task Configuration
+- **Chat** - Conversational models
+- **Code** - Code generation (Qwen Coder, DeepSeek)
+- **Analyze** - Code review models
+- **Create Project** - Scaffolding models
+- Set preferred & fallback models per task
 
-# Server
-PORT=3000
-LOG_LEVEL=info
-```
+#### 5. Feature Flags
+- Auto-escalate between layers
+- Cross-check responses
+- Cost tracking
+- Advanced routing features
 
-### Model Configuration
-
-Models are configured in the database with the following properties:
-- **id**: Unique identifier
-- **provider**: openrouter, openai, anthropic, oss-local
-- **layer**: L0, L1, L2, L3
-- **priority**: Lower number = higher priority (selected first)
-- **enabled**: true/false
-- **relative_cost**: Cost factor for budget tracking
+**All changes saved to PostgreSQL** - No restart required!
 
 ---
 
-## 📁 Project Structure
+## 🏗️ Local Development
+
+### Prerequisites
+- Node.js 20+
+- PostgreSQL 15+
+- Redis 7+
+
+### Setup
+
+```powershell
+npm install
+copy .env.example .env
+```
+
+### Edit `.env`
+
+```env
+# Database
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=ai_mcp_gateway
+DB_USER=postgres
+DB_PASSWORD=postgres
+CONFIG_ENCRYPTION_KEY=your-32-character-encryption-key-here
+
+# Provider API Keys (at least one)
+OPENROUTER_API_KEY=sk-or-v1-...
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# API Server
+API_PORT=3000
+API_HOST=0.0.0.0
+```
+
+### Build & Run
+
+```powershell
+npm run build
+npm run start:api     # Start API server
+# or
+npm run start:mcp     # Start MCP server
+```
+
+---
+
+## 🎯 Architecture
+
+### N-Layer Routing
+
+Requests automatically route through layers based on cost/capability:
+
+```
+L0 (Free)     → meta-llama/llama-3.3-70b-instruct:free, x-ai/grok-4.1-fast:free
+L1 (Cheap)    → google/gemini-flash-1.5, openai/gpt-4o-mini  
+L2 (Balanced) → anthropic/claude-3-haiku, openai/gpt-4o
+L3 (Premium)  → anthropic/claude-3.5-sonnet, openai/o1-preview
+```
+
+**Auto-escalation**: Failed requests automatically try next layer.
+
+### Task-Specific Routing
+
+Different tasks use optimized models:
+
+- **Chat**: Conversational models
+- **Code**: Code-specialized models (Qwen Coder, DeepSeek)
+- **Analyze**: Analysis-focused models
+- **Create Project**: Scaffolding models
+
+### Database Schema
+
+All configuration in PostgreSQL:
+
+```
+system_config         - System settings (key-value pairs)
+provider_credentials  - API keys (AES-256 encrypted)
+layer_config          - Layer assignments & priorities
+task_config           - Task routing rules
+feature_flags         - Feature toggles
+```
+
+---
+
+## 📊 Admin Dashboard
+
+Access at **http://localhost:5173**
+
+### Pages
+
+- **Dashboard** - Real-time metrics, request volume, costs
+- **Settings** - Complete configuration management (5 tabs)
+- **Monitoring** - Request logs, performance analytics
+- **Providers** - Provider status, rate limits
+
+### Settings UI Features
+
+- ✅ Live configuration editing
+- ✅ Encrypted credential storage
+- ✅ Input validation
+- ✅ Instant save to database
+- ✅ No service restart required
+- ✅ Responsive design
+
+---
+
+## 🔧 API Endpoints
+
+### Health & Status
+```bash
+GET  /health              # Health check
+GET  /v1/status          # Gateway status  
+GET  /v1/server-stats    # Server statistics
+```
+
+### Configuration API
+```bash
+# System Config
+GET    /v1/config/system
+PUT    /v1/config/system
+
+# Providers
+GET    /v1/config/providers
+POST   /v1/config/providers
+PUT    /v1/config/providers/:id
+DELETE /v1/config/providers/:id
+
+# Layers
+GET    /v1/config/layers
+PUT    /v1/config/layers/:id
+
+# Tasks
+GET    /v1/config/tasks
+PUT    /v1/config/tasks/:id
+
+# Features
+GET    /v1/config/features
+PUT    /v1/config/features/:id
+```
+
+### Chat & Generation
+```bash
+POST /v1/chat/completions    # OpenAI-compatible chat
+POST /v1/generate            # Text generation
+POST /v1/mcp-cli             # MCP CLI commands
+```
+
+---
+
+## 📖 Documentation
+
+### Setup & Deployment
+- [`docs/DEPLOYMENT_QUICK_START.md`](docs/DEPLOYMENT_QUICK_START.md) - Complete deployment guide
+- [`docs/DOCKER-DEPLOYMENT.md`](docs/DOCKER-DEPLOYMENT.md) - Docker setup details
+
+### Features & Usage
+- [`docs/FEATURE_SUMMARY.md`](docs/FEATURE_SUMMARY.md) - All features explained
+- [`docs/SETTINGS_UI.md`](docs/SETTINGS_UI.md) - Settings UI documentation
+- [`docs/API-GUIDE.md`](docs/API-GUIDE.md) - API reference
+
+### Technical Details
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - System architecture
+- [`docs/HYBRID_CONFIG_GUIDE.md`](docs/HYBRID_CONFIG_GUIDE.md) - Configuration system
+
+---
+
+## 🔐 Security
+
+### Encryption
+- Provider API keys encrypted with AES-256-CBC
+- Encryption key from `CONFIG_ENCRYPTION_KEY` environment variable
+- 32-character key required
+
+### Best Practices
+- Never commit `.env` or `.env.docker` to git
+- Use `.env.example` as template only
+- Rotate encryption keys periodically
+- Use environment variables in production
+
+---
+
+## 🚢 Deployment
+
+### Docker Production
+
+```powershell
+# 1. Configure production environment
+copy .env.docker.example .env.docker
+# Edit with production API keys
+
+# 2. Start services
+docker-compose up -d
+
+# 3. Verify health
+curl http://localhost:3000/health
+```
+
+### Environment Variables (Docker)
+
+Required in `docker-compose.yml`:
+```yaml
+environment:
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_NAME: ai_mcp_gateway
+  DB_USER: postgres
+  DB_PASSWORD: postgres
+  CONFIG_ENCRYPTION_KEY: your-key-here
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+```
+
+---
+
+## 🛠️ Development
+
+### Project Structure
 
 ```
 ai-mcp-gateway/
 ├── src/
-│   ├── index.ts           # Main entry point (CLI/MCP/API)
-│   ├── api/               # Express HTTP API server
-│   ├── cli/               # CLI commands (status, models, etc.)
-│   ├── mcp/               # MCP server for Claude Desktop
-│   ├── routing/           # N-layer router with priority selection
-│   ├── config/            # Model catalog & provider config
-│   ├── db/                # PostgreSQL connection & queries
-│   ├── cache/             # Redis caching layer
-│   ├── tools/             # LLM provider clients
-│   └── logging/           # Winston logger & metrics
-├── admin-dashboard/       # React admin UI
+│   ├── api/           # Express API server
+│   ├── db/            # Database & bootstrap
+│   ├── services/      # Business logic
+│   ├── config/        # Configuration service
+│   └── index.ts       # Main entry point
+├── admin-dashboard/   # React admin UI
 │   ├── src/
-│   │   ├── pages/         # Dashboard pages
-│   │   └── components/    # Reusable components
-│   └── package.json
-├── tests/
-│   ├── unit/              # Vitest unit tests
-│   ├── integration/       # API integration tests
-│   └── regression/        # Bug regression tests
-├── migrations/            # PostgreSQL migrations
-├── docker-compose.yml     # Full stack deployment
-└── Dockerfile             # Gateway container
+│   │   ├── pages/     # Settings.tsx, etc.
+│   │   └── components/
+│   └── Dockerfile
+├── docker-compose.yml # Container orchestration
+├── migrations/        # Database migrations
+└── docs/              # Documentation
 ```
 
----
+### Build Commands
 
-## 🧪 Testing
-
-```bash
-# Run unit tests
-npm test
-
-# Run with watch mode
-npm run test:watch
-
-# Run E2E tests
-npm run test:e2e
-
-# Run E2E with UI
-npm run test:e2e:ui
+```powershell
+npm run build         # Build TypeScript
+npm run dev           # Development mode
+npm run start:api     # Start API server
+npm run start:mcp     # Start MCP server
 ```
 
----
+### Database Migrations
 
-## 📚 Documentation
+Migrations run automatically on first startup. Manual execution:
 
-- [Architecture Guide](docs/ARCHITECTURE.md) - System design and components
-- [API Reference](docs/API-GUIDE.md) - Complete API documentation
-- [Docker Deployment](docs/DOCKER-DEPLOYMENT.md) - Container setup guide
-- [Testing Guide](docs/TESTING.md) - Test coverage and strategy
+```powershell
+# Local
+npm run db:migrate
+
+# Docker
+docker-compose exec mcp-gateway npm run db:migrate
+```
+
+### Dev container (avoid rebuilding on code changes)
+
+If you want to run the API in a container during development and avoid rebuilding the image every time you change code, use the provided `docker-compose.dev.yml`. It builds a small image that installs dependencies once and mounts the project directory into the container so code edits are visible immediately.
+
+Example (PowerShell):
+
+```powershell
+# build the dev image (installs deps once)
+docker compose -f docker-compose.dev.yml build
+# run the dev container with source mounted
+docker compose -f docker-compose.dev.yml up
+
+# Now edit files locally — the container runs `npm run dev` so changes are picked up.
+```
+
+Notes:
+- The dev compose uses a `dev` build target that caches dependencies. You only need to rebuild the image if you change `package.json` or native dependencies.
+- The container preserves the image's `node_modules` via an anonymous volume to avoid host/permission issues on Windows.
 
 ---
 
 ## 🤝 Contributing
 
+Contributions welcome! Please:
+
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create feature branch (`git checkout -b feature/amazing`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing`)
+5. Open Pull Request
 
 ---
 
-## 📄 License
+## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) for details
+
+---
+
+## 🆘 Troubleshooting
+
+### Container Won't Start
+
+**Check logs:**
+```powershell
+docker-compose logs mcp-gateway
+```
+
+**Common issues:**
+- Missing `CONFIG_ENCRYPTION_KEY` in docker-compose.yml
+- Database not ready - wait for `postgres` healthy status
+- Port conflicts - check if 3000, 5173, 5432, 6379 are available
+
+### Database Connection Failed
+
+**Verify environment:**
+```powershell
+docker-compose exec mcp-gateway printenv | Select-String "DB_"
+```
+
+**Should show:**
+```
+DB_HOST=postgres
+DB_PORT=5432
+DB_NAME=ai_mcp_gateway
+DB_USER=postgres
+DB_PASSWORD=postgres
+```
+
+### Settings Not Saving
+
+**Check ConfigService initialization:**
+```powershell
+docker-compose logs mcp-gateway | Select-String "Configuration service"
+```
+
+**Should see:**
+```
+Configuration service initialized from database
+```
+
+---
+
+## 📞 Support
+
+- **Issues**: [GitHub Issues](https://github.com/babasida246/ai-mcp-gateway/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/babasida246/ai-mcp-gateway/discussions)
+- **Documentation**: [docs/](docs/)
 
 ---
 
 ## 🙏 Acknowledgments
 
-- [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification
-- [OpenRouter](https://openrouter.ai/) - Multi-model API gateway
-- [Anthropic](https://anthropic.com/) - Claude AI models
-- [OpenAI](https://openai.com/) - GPT models
+Built with:
+- [Model Context Protocol](https://modelcontextprotocol.io/) - Anthropic's MCP specification
+- [Express](https://expressjs.com/) - Web framework
+- [React](https://react.dev/) - UI library
+- [PostgreSQL](https://www.postgresql.org/) - Database
+- [Redis](https://redis.io/) - Cache
+- [TypeScript](https://www.typescriptlang.org/) - Type safety
+
+---
+
+**Made with ❤️ by the AI MCP Gateway team**

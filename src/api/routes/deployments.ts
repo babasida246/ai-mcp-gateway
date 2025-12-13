@@ -128,6 +128,21 @@ router.post('/generate', async (req: Request, res: Response) => {
             });
         }
 
+        // Determine if the LLM response appears to be a final command set or intermediate reasoning
+        const hasCommands = Array.isArray(response.commands) && response.commands.length > 0;
+        const nonPlaceholder = hasCommands && response.commands.some((c: any) => {
+            if (!c || typeof c.command !== 'string') return false;
+            const cmd = c.command.trim().toLowerCase();
+            // Heuristic: placeholder/sample commands or echo indicate non-final
+            if (cmd.includes('sample command') || cmd.includes('placeholder') || cmd.startsWith('echo')) return false;
+            // Reject obviously short/no-op commands
+            if (cmd.length < 10) return false;
+            return true;
+        });
+
+        const isFinal = !!nonPlaceholder;
+        const isReasoning = !isFinal;
+
         return res.json({
             generationId,
             sessionId: displayInfo.sessionId,
@@ -143,6 +158,9 @@ router.post('/generate', async (req: Request, res: Response) => {
             affectedServices: response.affectedServices,
             estimatedDuration: response.estimatedDuration,
             display: displayInfo.display,
+            // Meta flags to indicate whether this response is a final command set or intermediate reasoning
+            isFinal,
+            isReasoning,
         });
     } catch (error) {
         logger.error('[DeploymentAPI] Generate failed', {

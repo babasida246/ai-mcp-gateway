@@ -1,0 +1,32 @@
+{
+    "intent": "Configure basic firewall for WAN on ether1 and allow management from 192.168.1.0/24",
+    "deviceId": "test-device-01",
+    "facts": {
+        "model": "CCR2116",
+        "routeros": "7.16",
+        "interfaces": [
+            {
+                "name": "ether1",
+                "type": "ether"
+            },
+            {
+                "name": "br-lan",
+                "type": "bridge"
+            }
+        ],
+        "bridges": [
+            {
+                "name": "br-lan"
+            }
+        ],
+        "ipAddresses": [
+            {
+                "address": "192.168.1.1/24",
+                "interface": "br-lan"
+            }
+        ]
+    },
+    "selectedModules": [
+        "firewall"
+    ]
+}

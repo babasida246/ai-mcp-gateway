@@ -19,8 +19,28 @@ COPY migrations ./migrations
 # Build the application
 RUN npm run build
 
-# Stage 2: Production
-FROM node:20-alpine
+# Stage: Dev image (cached dependencies only)
+FROM node:20-alpine AS dev
+
+WORKDIR /app
+
+# Copy package files only so dependency layer can be cached
+COPY package*.json ./
+COPY tsconfig.json ./
+
+# Install all dependencies (including dev) for development
+RUN npm ci
+
+# Expose port for dev
+ENV NODE_ENV=development
+ENV API_PORT=3000
+EXPOSE 3000
+
+# Default command for dev stage – docker-compose will override if needed
+CMD ["npm", "run", "dev"]
+
+# Stage 2: Production (default)
+FROM node:20-alpine AS production
 
 WORKDIR /app
 

@@ -1,12 +1,14 @@
 # Docker Compose for Development
-# Simpler setup - only essential services
+# Mounts source code so no rebuild needed on code changes
+# Runs dev servers with hot reload
 
 services:
-  # MCP Gateway - API Server
+  # MCP Gateway - API Server (Dev Mode)
   mcp-gateway:
     build:
       context: .
       dockerfile: Dockerfile
+      target: dev
     container_name: mcp-gateway-dev
     restart: unless-stopped
     ports:
@@ -15,6 +17,7 @@ services:
       MODE: api
       API_PORT: 3000
       API_HOST: 0.0.0.0
+      NODE_ENV: development
       
       # LLM Keys - set these!
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
@@ -26,10 +29,16 @@ services:
       OPENROUTER_REPLACE_OPENAI: openai/gpt-4o-mini
       OPENROUTER_REPLACE_CLAUDE: anthropic/claude-3.5-sonnet
       
-      # No database/redis for dev (optional features)
-      # Gateway will work without them
-      REDIS_HOST: localhost
+      # Database/Redis
+      REDIS_HOST: redis
       REDIS_PORT: 6379
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ai_mcp_gateway_dev
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      CONFIG_ENCRYPTION_KEY: ${CONFIG_ENCRYPTION_KEY:-L6+YmJ8xK9pQ2wR5sT1uV3yZ4aB7cD8e}
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_mcp_gateway_dev
       
       LOG_LEVEL: debug
       DEFAULT_LAYER: L0
@@ -37,10 +46,96 @@ services:
       ENABLE_AUTO_ESCALATE: true
     
     volumes:
+      # Mount project into container so code changes take effect without rebuilding image
+      - ./:/app:delegated
+      # Keep container's node_modules (installed at image build) to avoid host/permission issues
+      - /app/node_modules
       - ./logs:/app/logs
+    
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    
+    # Override default command to run dev watcher (tsup --watch)
+    command: ["npm", "run", "dev"]
     
     networks:
       - ai-mcp-dev
+
+  # Admin Dashboard (Dev Mode with Hot Reload)
+  admin-dashboard:
+    build:
+      context: .
+      dockerfile: admin-dashboard/Dockerfile
+      target: dev
+    container_name: ai-mcp-dashboard-dev
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      NODE_ENV: development
+      VITE_API_URL: http://localhost:3000
+    volumes:
+      # Mount full repo so admin-dashboard code changes trigger hot reload
+      - ./:/app:delegated
+      # Keep container's node_modules
+      - /app/node_modules
+      - /app/admin-dashboard/node_modules
+    depends_on:
+      - mcp-gateway
+    # Run Vite dev server with host binding so it's accessible from host machine
+    command: ["npm", "--workspace=admin-dashboard", "run", "dev", "--", "--host", "0.0.0.0"]
+    networks:
+      - ai-mcp-dev
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: ai-mcp-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data-dev:/data
+    networks:
+      - ai-mcp-dev
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai-mcp-postgres-dev
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ai_mcp_gateway_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data-dev:/var/lib/postgresql/data
+    networks:
+      - ai-mcp-dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
+
+volumes:
+  redis-data-dev:
+    driver: local
+  postgres-data-dev:
+    driver: local
 
 networks:
   ai-mcp-dev:
