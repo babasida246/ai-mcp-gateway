@@ -42,6 +42,9 @@ CMD ["npm", "--workspace=admin-dashboard", "run", "dev", "--", "--host", "0.0.0.
 
 FROM nginx:alpine AS production
 
+# Install wget for healthcheck
+RUN apk add --no-cache wget
+
 # Copy built files from workspace output
 COPY --from=builder /app/admin-dashboard/dist /usr/share/nginx/html
 
@@ -53,7 +56,7 @@ EXPOSE 80
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1
+    CMD wget --quiet --tries=1 --spider http://localhost/ || exit 1
 
 # Start nginx
 CMD ["nginx", "-g", "daemon off;"]

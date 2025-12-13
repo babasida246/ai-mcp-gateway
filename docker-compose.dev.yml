@@ -20,7 +20,7 @@ services:
       NODE_ENV: development
       
       # LLM Keys - set these!
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       
@@ -48,6 +48,7 @@ services:
     volumes:
       # Mount project into container so code changes take effect without rebuilding image
       - ./:/app:delegated
+      # (removed file bind mount) dist/instructions.md will be created after build
       # Keep container's node_modules (installed at image build) to avoid host/permission issues
       - /app/node_modules
       - ./logs:/app/logs
@@ -58,8 +59,10 @@ services:
       postgres:
         condition: service_healthy
     
-    # Override default command to run dev watcher (tsup --watch)
-    command: ["npm", "run", "dev"]
+    # Override default command to run dev watcher and start the node server after successful build
+    # Uses tsup's --onSuccess to run the built app automatically when the initial build succeeds
+    # Use tsup --onSuccess to copy instructions into dist and then start the server
+    command: ["sh", "-c", "npm run dev -- --onSuccess \"cp src/tools/codeAgent/instructions.md dist/instructions.md && node dist/index.js\""]
     
     networks:
       - ai-mcp-dev
@@ -76,7 +79,11 @@ services:
       - "5173:5173"
     environment:
       NODE_ENV: development
+      # For local dev, frontend runs in the host browser so call gateway via host
       VITE_API_URL: http://localhost:3000
+      # Enable polling for file changes (better for Docker on Windows/Mac)
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
     volumes:
       # Mount full repo so admin-dashboard code changes trigger hot reload
       - ./:/app:delegated
@@ -108,9 +115,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # PostgreSQL Database
+  # PostgreSQL Database (built with pgvector)
   postgres:
-    image: postgres:15-alpine
+    build:
+      context: ./docker/postgres
+      dockerfile: Dockerfile
     container_name: ai-mcp-postgres-dev
     restart: unless-stopped
     ports:

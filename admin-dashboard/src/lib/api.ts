@@ -7,6 +7,8 @@
 import axios from 'axios';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+// All frontend API requests should be prefixed with /v1 (server mounts API under /v1)
+const API_PREFIX = '/v1';
 
 /**
  * Get auth token from localStorage
@@ -19,7 +21,7 @@ export function getAuthToken(): string | null {
  * Create axios instance with auth header interceptor
  */
 const api = axios.create({
-    baseURL: API_BASE,
+    baseURL: `${API_BASE}${API_PREFIX}`,
 });
 
 // Add auth token to all requests
